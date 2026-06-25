@@ -1,0 +1,21 @@
+pub mod alias;
+pub mod config;
+pub mod current;
+pub mod dispatch;
+pub mod doctor;
+pub mod init;
+pub mod install;
+pub mod list;
+pub mod remove;
+pub mod self_update;
+pub mod switch;
+
+pub use alias::{AliasAction, AliasArgs};
+pub use config::{ConfigAction, ConfigArgs};
+pub use dispatch::dispatch;
+pub use init::{InitArgs, Shell};
+pub use install::{InstallArgs, JavaSource};
+pub use list::ListArgs;
+pub use remove::RemoveArgs;
+pub use self_update::SelfUpdateArgs;
+pub use switch::SwitchArgs;
