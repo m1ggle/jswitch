@@ -1,1 +1,26 @@
-/target
+/target/
+
+# Rust build artifacts and local metadata
+Cargo.lock
+*.pdb
+
+# Local editor and IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local Qwen Code state
+.qwen/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
