@@ -4,11 +4,12 @@
 Cargo.lock
 *.pdb
 
-# Local editor and IDE settings
+# Local editor, IDE, and agent settings
 .vscode/
 .idea/
 *.swp
 *.swo
+QWEN.md
 
 # Local Qwen Code state
 .qwen/
