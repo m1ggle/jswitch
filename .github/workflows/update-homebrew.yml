@@ -1,0 +1,122 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.1.0
+        required: true
+        type: string
+      owner:
+        description: GitHub owner for the tap repository
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  BINARY_NAME: jswitch
+  FORMULA_NAME: jswitch
+  TAP_REPO_NAME: homebrew-tap
+  AARCH64_ARTIFACT: jswitch-aarch64-apple-darwin.tar.gz
+  X86_64_ARTIFACT: jswitch-x86_64-apple-darwin.tar.gz
+
+jobs:
+  update-homebrew:
+    name: Update Homebrew formula
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release metadata
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          INPUT_OWNER: ${{ inputs.owner }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          owner="${INPUT_OWNER:-$REPOSITORY_OWNER}"
+          version="${RELEASE_TAG#v}"
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$AARCH64_ARTIFACT" \
+            --pattern "$X86_64_ARTIFACT"
+
+      - name: Calculate checksums
+        id: checksums
+        run: |
+          set -euo pipefail
+          echo "aarch64=$(sha256sum "$AARCH64_ARTIFACT" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "x86_64=$(sha256sum "$X86_64_ARTIFACT" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.release.outputs.owner }}/${{ env.TAP_REPO_NAME }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          OWNER: ${{ steps.release.outputs.owner }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+          AARCH64_SHA256: ${{ steps.checksums.outputs.aarch64 }}
+          X86_64_SHA256: ${{ steps.checksums.outputs.x86_64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/${FORMULA_NAME}.rb <<EOF
+          class Jswitch < Formula
+            desc "Fast Java version switcher written in Rust"
+            homepage "https://github.com/${OWNER}/${BINARY_NAME}"
+            version "${VERSION}"
+            license any_of: ["MIT", "Apache-2.0"]
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${OWNER}/${BINARY_NAME}/releases/download/${TAG}/${AARCH64_ARTIFACT}"
+                sha256 "${AARCH64_SHA256}"
+              else
+                url "https://github.com/${OWNER}/${BINARY_NAME}/releases/download/${TAG}/${X86_64_ARTIFACT}"
+                sha256 "${X86_64_SHA256}"
+              end
+            end
+
+            def install
+              bin.install "${BINARY_NAME}"
+              generate_completions_from_executable(bin/"${BINARY_NAME}", "completion")
+            end
+
+            test do
+              assert_match "${BINARY_NAME}", shell_output("#{bin}/${BINARY_NAME} --help")
+            end
+          end
+          EOF
+
+      - name: Commit formula update
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/${FORMULA_NAME}.rb
+          if git diff --cached --quiet; then
+            echo "Formula is already up to date."
+            exit 0
+          fi
+          git commit -m "Update ${FORMULA_NAME} to ${{ steps.release.outputs.tag }}"
+          git push
