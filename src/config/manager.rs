@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -126,15 +125,48 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".jswitch").join("config.toml");
         let mut config = Config::default();
-        config.set("default_version", "17".to_owned()).unwrap();
-        config.set("alias.lts", "21".to_owned()).unwrap();
-        config.set("auto_update", "true".to_owned()).unwrap();
+        config
+            .set("global.default_version", "17".to_owned())
+            .unwrap();
+        config.set("aliases.lts", "21".to_owned()).unwrap();
+        config.set("global.auto_update", "true".to_owned()).unwrap();
+        config
+            .set(
+                "sources.openjdk",
+                "https://download.java.net/java/GA/jdk".to_owned(),
+            )
+            .unwrap();
+        config
+            .set(
+                "proxy.http_proxy",
+                "http://proxy.company.com:8080".to_owned(),
+            )
+            .unwrap();
+        config.set("plugins.maven", "true".to_owned()).unwrap();
 
         config.save_to_path(&path).unwrap();
         let loaded = Config::load_from_path(path).unwrap();
 
-        assert_eq!(loaded.get("default_version").unwrap(), Some("17".to_owned()));
-        assert_eq!(loaded.get("alias.lts").unwrap(), Some("21".to_owned()));
-        assert_eq!(loaded.get("auto_update").unwrap(), Some("true".to_owned()));
+        assert_eq!(
+            loaded.get("global.default_version").unwrap(),
+            Some("17".to_owned())
+        );
+        assert_eq!(loaded.get("aliases.lts").unwrap(), Some("21".to_owned()));
+        assert_eq!(
+            loaded.get("global.auto_update").unwrap(),
+            Some("true".to_owned())
+        );
+        assert_eq!(
+            loaded.get("sources.openjdk").unwrap(),
+            Some("https://download.java.net/java/GA/jdk".to_owned())
+        );
+        assert_eq!(
+            loaded.get("proxy.http_proxy").unwrap(),
+            Some("http://proxy.company.com:8080".to_owned())
+        );
+        assert_eq!(
+            loaded.get("plugins.maven").unwrap(),
+            Some("true".to_owned())
+        );
     }
 }

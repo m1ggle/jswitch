@@ -3,12 +3,21 @@ use super::{global::Config, manager::ConfigError};
 impl Config {
     pub fn get(&self, key: &str) -> Result<Option<String>, ConfigError> {
         let value = match key {
-            "default_version" => self.default_version.clone(),
-            "mirror_url" => self.mirror_url.clone(),
-            "auto_update" => Some(self.auto_update.to_string()),
-            "check_updates" => Some(self.check_updates.to_string()),
-            "quiet_mode" => Some(self.quiet_mode.to_string()),
-            key if key.starts_with("alias.") => self.aliases.get(&key[6..]).cloned(),
+            "global.default_version" => self.global.default_version.clone(),
+            "global.mirror_url" => self.global.mirror_url.clone(),
+            "global.auto_update" => Some(self.global.auto_update.to_string()),
+            "global.check_updates" => Some(self.global.check_updates.to_string()),
+            "global.quiet_mode" => Some(self.global.quiet_mode.to_string()),
+            key if key.starts_with("aliases.") => self.aliases.get(&key[8..]).cloned(),
+            "sources.openjdk" => self.sources.openjdk.clone(),
+            "sources.corretto" => self.sources.corretto.clone(),
+            "sources.adoptopenjdk" => self.sources.adoptopenjdk.clone(),
+            "sources.oracle" => self.sources.oracle.clone(),
+            "proxy.http_proxy" => self.proxy.http_proxy.clone(),
+            "proxy.https_proxy" => self.proxy.https_proxy.clone(),
+            "proxy.no_proxy" => self.proxy.no_proxy.clone(),
+            "plugins.maven" => Some(self.plugins.maven.to_string()),
+            "plugins.gradle" => Some(self.plugins.gradle.to_string()),
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
         };
 
@@ -17,14 +26,23 @@ impl Config {
 
     pub fn set(&mut self, key: &str, value: String) -> Result<(), ConfigError> {
         match key {
-            "default_version" => self.default_version = Some(value),
-            "mirror_url" => self.mirror_url = Some(value),
-            "auto_update" => self.auto_update = parse_bool(key, &value)?,
-            "check_updates" => self.check_updates = parse_bool(key, &value)?,
-            "quiet_mode" => self.quiet_mode = parse_bool(key, &value)?,
-            key if key.starts_with("alias.") => {
-                self.aliases.insert(key[6..].to_owned(), value);
+            "global.default_version" => self.global.default_version = Some(value),
+            "global.mirror_url" => self.global.mirror_url = Some(value),
+            "global.auto_update" => self.global.auto_update = parse_bool(key, &value)?,
+            "global.check_updates" => self.global.check_updates = parse_bool(key, &value)?,
+            "global.quiet_mode" => self.global.quiet_mode = parse_bool(key, &value)?,
+            key if key.starts_with("aliases.") => {
+                self.aliases.insert(key[8..].to_owned(), value);
             }
+            "sources.openjdk" => self.sources.openjdk = Some(value),
+            "sources.corretto" => self.sources.corretto = Some(value),
+            "sources.adoptopenjdk" => self.sources.adoptopenjdk = Some(value),
+            "sources.oracle" => self.sources.oracle = Some(value),
+            "proxy.http_proxy" => self.proxy.http_proxy = Some(value),
+            "proxy.https_proxy" => self.proxy.https_proxy = Some(value),
+            "proxy.no_proxy" => self.proxy.no_proxy = Some(value),
+            "plugins.maven" => self.plugins.maven = parse_bool(key, &value)?,
+            "plugins.gradle" => self.plugins.gradle = parse_bool(key, &value)?,
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
         }
 
@@ -33,18 +51,66 @@ impl Config {
 
     pub fn entries(&self) -> Vec<(String, String)> {
         let mut entries = vec![
-            ("default_version".to_owned(), format_option(&self.default_version)),
-            ("mirror_url".to_owned(), format_option(&self.mirror_url)),
-            ("auto_update".to_owned(), self.auto_update.to_string()),
-            ("check_updates".to_owned(), self.check_updates.to_string()),
-            ("quiet_mode".to_owned(), self.quiet_mode.to_string()),
+            (
+                "global.default_version".to_owned(),
+                format_option(&self.global.default_version),
+            ),
+            (
+                "global.mirror_url".to_owned(),
+                format_option(&self.global.mirror_url),
+            ),
+            (
+                "global.auto_update".to_owned(),
+                self.global.auto_update.to_string(),
+            ),
+            (
+                "global.check_updates".to_owned(),
+                self.global.check_updates.to_string(),
+            ),
+            (
+                "global.quiet_mode".to_owned(),
+                self.global.quiet_mode.to_string(),
+            ),
         ];
 
         entries.extend(
             self.aliases
                 .iter()
-                .map(|(alias, version)| (format!("alias.{alias}"), version.clone())),
+                .map(|(alias, version)| (format!("aliases.{alias}"), version.clone())),
         );
+
+        entries.extend([
+            (
+                "sources.openjdk".to_owned(),
+                format_option(&self.sources.openjdk),
+            ),
+            (
+                "sources.corretto".to_owned(),
+                format_option(&self.sources.corretto),
+            ),
+            (
+                "sources.adoptopenjdk".to_owned(),
+                format_option(&self.sources.adoptopenjdk),
+            ),
+            (
+                "sources.oracle".to_owned(),
+                format_option(&self.sources.oracle),
+            ),
+            (
+                "proxy.http_proxy".to_owned(),
+                format_option(&self.proxy.http_proxy),
+            ),
+            (
+                "proxy.https_proxy".to_owned(),
+                format_option(&self.proxy.https_proxy),
+            ),
+            (
+                "proxy.no_proxy".to_owned(),
+                format_option(&self.proxy.no_proxy),
+            ),
+            ("plugins.maven".to_owned(), self.plugins.maven.to_string()),
+            ("plugins.gradle".to_owned(), self.plugins.gradle.to_string()),
+        ]);
 
         entries
     }
@@ -64,6 +130,60 @@ fn format_option(value: &Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supports_nested_config_keys() {
+        let mut config = Config::default();
+        config
+            .set("global.default_version", "17".to_owned())
+            .unwrap();
+        config.set("aliases.lts", "21".to_owned()).unwrap();
+        config
+            .set("sources.openjdk", "https://example.com/openjdk".to_owned())
+            .unwrap();
+        config
+            .set("proxy.http_proxy", "http://proxy:8080".to_owned())
+            .unwrap();
+        config.set("plugins.maven", "true".to_owned()).unwrap();
+
+        assert_eq!(
+            config.get("global.default_version").unwrap(),
+            Some("17".to_owned())
+        );
+        assert_eq!(config.get("aliases.lts").unwrap(), Some("21".to_owned()));
+        assert_eq!(
+            config.get("sources.openjdk").unwrap(),
+            Some("https://example.com/openjdk".to_owned())
+        );
+        assert_eq!(
+            config.get("proxy.http_proxy").unwrap(),
+            Some("http://proxy:8080".to_owned())
+        );
+        assert_eq!(
+            config.get("plugins.maven").unwrap(),
+            Some("true".to_owned())
+        );
+    }
+
+    #[test]
+    fn entries_use_sectioned_keys() {
+        let mut config = Config::default();
+        config.global.default_version = Some("17".to_owned());
+        config.aliases.insert("lts".to_owned(), "21".to_owned());
+
+        let entries = config.entries();
+
+        assert!(
+            entries
+                .iter()
+                .any(|(key, value)| key == "global.default_version" && value == "17")
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|(key, value)| key == "aliases.lts" && value == "21")
+        );
+    }
 
     #[test]
     fn rejects_unknown_config_keys() {
