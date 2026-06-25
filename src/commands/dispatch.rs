@@ -8,6 +8,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         Command::List(args) => crate::commands::list::run(args).await,
         Command::Current => crate::commands::current::run().await,
         Command::Config(args) => crate::commands::config::run(args).await,
+        Command::Completion(args) => crate::commands::completion::run(args).await,
         Command::Doctor => crate::commands::doctor::run().await,
     }
 }

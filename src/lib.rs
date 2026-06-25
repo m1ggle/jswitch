@@ -38,6 +38,8 @@ pub enum Command {
     Current,
     /// Manage configuration.
     Config(commands::config::ConfigArgs),
+    /// Generate shell completion scripts.
+    Completion(commands::completion::CompletionArgs),
     /// Run health checks.
     Doctor,
 }

@@ -1,5 +1,8 @@
 use clap::Parser;
-use jswitch::{Cli, Command, commands::install::JavaSource};
+use jswitch::{
+    Cli, Command,
+    commands::{completion::CompletionShell, install::JavaSource},
+};
 
 #[test]
 fn parses_install_arguments() {
@@ -49,5 +52,15 @@ fn parses_config_set() {
             assert!(debug.contains("17"));
         }
         command => panic!("expected config command, got {command:?}"),
+    }
+}
+
+#[test]
+fn parses_completion_shell() {
+    let cli = Cli::parse_from(["jswitch", "completion", "zsh"]);
+
+    match cli.command {
+        Command::Completion(args) => assert_eq!(args.shell, CompletionShell::Zsh),
+        command => panic!("expected completion command, got {command:?}"),
     }
 }
