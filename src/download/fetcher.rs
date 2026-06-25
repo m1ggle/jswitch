@@ -70,11 +70,19 @@ fn resolve_feature_version(requested: &str) -> Result<u32, NetworkError> {
     match requested {
         "lts" | "stable" => Ok(21),
         "latest" => Ok(25),
-        value => value
-            .split('.')
-            .next()
-            .and_then(|major| major.parse::<u32>().ok())
-            .ok_or_else(|| NetworkError::UnsupportedVersion(value.to_owned())),
+        value => {
+            let parts = value.split('.').collect::<Vec<_>>();
+            let major = parts
+                .first()
+                .and_then(|major| major.parse::<u32>().ok())
+                .ok_or_else(|| NetworkError::UnsupportedVersion(value.to_owned()))?;
+
+            if major == 1 && matches!(parts.get(1), Some(&"8")) {
+                Ok(8)
+            } else {
+                Ok(major)
+            }
+        }
     }
 }
 
@@ -178,6 +186,8 @@ mod tests {
     fn resolves_major_versions() {
         assert_eq!(resolve_feature_version("17").unwrap(), 17);
         assert_eq!(resolve_feature_version("17.0.10").unwrap(), 17);
+        assert_eq!(resolve_feature_version("1.8").unwrap(), 8);
+        assert_eq!(resolve_feature_version("1.8.0_402").unwrap(), 8);
         assert_eq!(resolve_feature_version("lts").unwrap(), 21);
     }
 
@@ -202,5 +212,15 @@ mod tests {
                 remote.archive_name
             ))
         );
+    }
+
+    #[test]
+    fn builds_corretto_eight_url_for_legacy_java_version() {
+        let major = resolve_feature_version("1.8").unwrap();
+        let remote = corretto_remote_version(major);
+
+        assert_eq!(remote.version, "8");
+        assert!(remote.archive_name.starts_with("amazon-corretto-8-"));
+        assert!(remote.download_url.contains("amazon-corretto-8-"));
     }
 }
