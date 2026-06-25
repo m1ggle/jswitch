@@ -1,23 +1,24 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod download;
 pub mod env;
+pub mod error;
 pub mod utils;
 pub mod version;
 
-#[derive(Debug, Error)]
-pub enum JswitchError {
-    #[error(transparent)]
-    Config(#[from] config::ConfigError),
-}
+pub use error::{JswitchError, Result};
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-#[command(name = "jswitch", version, about = "A fast Java version switcher", arg_required_else_help = true)]
+#[command(
+    name = "jswitch",
+    version,
+    about = "A fast Java version switcher",
+    arg_required_else_help = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

@@ -1,7 +1,7 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use crate::JswitchError;
+use crate::Result;
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct InitArgs {
@@ -18,7 +18,7 @@ pub enum Shell {
     PowerShell,
 }
 
-pub async fn run(args: InitArgs) -> Result<(), JswitchError> {
+pub async fn run(args: InitArgs) -> Result<()> {
     println!("initialize shell integration: {:?}", args.shell);
     Ok(())
 }

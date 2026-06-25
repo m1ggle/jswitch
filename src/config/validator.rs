@@ -1,4 +1,6 @@
-use super::{global::Config, manager::ConfigError};
+use crate::error::jswitch_error::ConfigError;
+
+use super::global::Config;
 
 impl Config {
     pub fn get(&self, key: &str) -> Result<Option<String>, ConfigError> {

@@ -1,7 +1,7 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use crate::JswitchError;
+use crate::Result;
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct SwitchArgs {
@@ -17,7 +17,7 @@ pub struct SwitchArgs {
     pub session: bool,
 }
 
-pub async fn run(args: SwitchArgs) -> Result<(), JswitchError> {
+pub async fn run(args: SwitchArgs) -> Result<()> {
     println!(
         "switch Java version: {:?}, global: {}, local: {}, session: {}",
         args.version, args.global, args.local, args.session

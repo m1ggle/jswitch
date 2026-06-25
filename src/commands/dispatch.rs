@@ -1,6 +1,6 @@
-use crate::{Cli, Command, JswitchError};
+use crate::{Cli, Command, Result};
 
-pub async fn dispatch(cli: Cli) -> Result<(), JswitchError> {
+pub async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Init(args) => crate::commands::init::run(args).await,
         Command::Install(args) => crate::commands::install::run(args).await,

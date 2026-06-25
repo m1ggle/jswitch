@@ -1,7 +1,7 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use crate::JswitchError;
+use crate::Result;
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct InstallArgs {
@@ -23,7 +23,7 @@ pub enum JavaSource {
     Adoptopenjdk,
 }
 
-pub async fn run(args: InstallArgs) -> Result<(), JswitchError> {
+pub async fn run(args: InstallArgs) -> Result<()> {
     println!(
         "install Java version: {:?}, source: {:?}, use-now: {}",
         args.version, args.source, args.use_now

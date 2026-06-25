@@ -1,7 +1,7 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use crate::JswitchError;
+use crate::Result;
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct ListArgs {
@@ -15,7 +15,7 @@ pub struct ListArgs {
     pub verbose: bool,
 }
 
-pub async fn run(args: ListArgs) -> Result<(), JswitchError> {
+pub async fn run(args: ListArgs) -> Result<()> {
     println!(
         "list Java versions, installed: {}, remote: {}, verbose: {}",
         args.installed, args.remote, args.verbose

@@ -1,6 +1,6 @@
-use crate::JswitchError;
+use crate::Result;
 
-pub async fn run() -> Result<(), JswitchError> {
+pub async fn run() -> Result<()> {
     println!("run diagnostics");
     Ok(())
 }

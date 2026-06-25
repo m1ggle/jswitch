@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Config, JswitchError};
+use crate::{Result, config::Config};
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct ConfigArgs {
@@ -17,7 +17,7 @@ pub enum ConfigAction {
     List,
 }
 
-pub async fn run(args: ConfigArgs) -> Result<(), JswitchError> {
+pub async fn run(args: ConfigArgs) -> Result<()> {
     match args.action {
         ConfigAction::Show => {
             let config = Config::load_or_default()?;

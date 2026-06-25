@@ -2,45 +2,10 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-use thiserror::Error;
+
+use crate::error::jswitch_error::ConfigError;
 
 use super::global::Config;
-
-#[derive(Debug, Error)]
-pub enum ConfigError {
-    #[error("home directory not available")]
-    HomeDirUnavailable,
-    #[error("unsupported config key: {0}")]
-    UnsupportedKey(String),
-    #[error("invalid boolean value for {key}: {value}")]
-    InvalidBoolean { key: String, value: String },
-    #[error("failed to create config directory {path}: {source}")]
-    CreateDir {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to read config file {path}: {source}")]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to write config file {path}: {source}")]
-    Write {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to parse config file {path}: {source}")]
-    Parse {
-        path: PathBuf,
-        #[source]
-        source: toml::de::Error,
-    },
-    #[error("failed to serialize config: {0}")]
-    Serialize(#[from] toml::ser::Error),
-}
 
 impl Config {
     pub fn load() -> Result<Self, ConfigError> {

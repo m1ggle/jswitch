@@ -1,5 +1,5 @@
 use clap::Parser;
-use jswitch::{commands::install::JavaSource, Cli, Command};
+use jswitch::{Cli, Command, commands::install::JavaSource};
 
 #[test]
 fn parses_install_arguments() {
