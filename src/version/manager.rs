@@ -19,6 +19,10 @@ impl VersionManager {
         Ok(Self::new(home.join(".jswitch")))
     }
 
+    pub fn root_dir(&self) -> &std::path::Path {
+        &self.root
+    }
+
     pub fn versions_dir(&self) -> PathBuf {
         self.root.join("versions")
     }

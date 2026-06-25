@@ -66,6 +66,59 @@ pub enum IoError {
 pub enum NetworkError {
     #[error("request failed: {0}")]
     Request(#[from] reqwest::Error),
+    #[error("remote Java version not found: {0}")]
+    RemoteVersionNotFound(String),
+    #[error("unsupported Java version request: {0}")]
+    UnsupportedVersion(String),
+    #[error("checksum mismatch: expected {expected}, got {actual}")]
+    ChecksumMismatch { expected: String, actual: String },
+    #[error("unsupported archive format: {0}")]
+    UnsupportedArchive(String),
+    #[error("failed to create directory {path}: {source}")]
+    CreateDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to read file {path}: {source}")]
+    ReadFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to write file {path}: {source}")]
+    WriteFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to remove path {path}: {source}")]
+    Remove {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to rename {from} to {to}: {source}")]
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to serialize version metadata: {0}")]
+    SerializeMetadata(#[from] toml::ser::Error),
+    #[error("failed to unpack archive {path}: {source}")]
+    Unpack {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to unpack zip archive {path}: {source}")]
+    Unzip {
+        path: PathBuf,
+        #[source]
+        source: zip::result::ZipError,
+    },
 }
 
 #[derive(Debug, Error)]

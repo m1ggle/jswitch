@@ -1,0 +1,149 @@
+use serde::Deserialize;
+
+use crate::{commands::install::JavaSource, error::jswitch_error::NetworkError};
+
+use super::DownloadClient;
+
+const ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteVersion {
+    pub version: String,
+    pub source: JavaSource,
+    pub archive_name: String,
+    pub download_url: String,
+    pub checksum_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionFetcher {
+    client: DownloadClient,
+}
+
+impl VersionFetcher {
+    pub fn new(client: DownloadClient) -> Self {
+        Self { client }
+    }
+
+    pub async fn fetch(
+        &self,
+        requested: &str,
+        source: JavaSource,
+    ) -> Result<RemoteVersion, NetworkError> {
+        let major = resolve_feature_version(requested)?;
+        let image_type = match source {
+            JavaSource::OpenJdk | JavaSource::Adoptopenjdk => "jdk",
+            JavaSource::Corretto | JavaSource::Oracle => "jdk",
+        };
+        let url = format!(
+            "{ADOPTIUM_BASE_URL}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
+            architecture(),
+            operating_system(),
+            vendor(source),
+        );
+
+        let assets = self
+            .client
+            .inner()
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Vec<AdoptiumAsset>>()
+            .await?;
+
+        assets
+            .into_iter()
+            .find_map(|asset| asset.into_remote_version(source))
+            .ok_or_else(|| NetworkError::RemoteVersionNotFound(requested.to_owned()))
+    }
+}
+
+fn resolve_feature_version(requested: &str) -> Result<u32, NetworkError> {
+    match requested {
+        "lts" | "stable" => Ok(21),
+        "latest" => Ok(25),
+        value => value
+            .split('.')
+            .next()
+            .and_then(|major| major.parse::<u32>().ok())
+            .ok_or_else(|| NetworkError::UnsupportedVersion(value.to_owned())),
+    }
+}
+
+fn vendor(source: JavaSource) -> &'static str {
+    match source {
+        JavaSource::OpenJdk | JavaSource::Adoptopenjdk => "eclipse",
+        JavaSource::Corretto => "amazon",
+        JavaSource::Oracle => "oracle",
+    }
+}
+
+fn operating_system() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "mac",
+        "windows" => "windows",
+        _ => "linux",
+    }
+}
+
+fn architecture() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => "aarch64",
+        _ => "x64",
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AdoptiumAsset {
+    binary: AdoptiumBinary,
+    version_data: AdoptiumVersionData,
+}
+
+impl AdoptiumAsset {
+    fn into_remote_version(self, source: JavaSource) -> Option<RemoteVersion> {
+        let package = self.binary.package;
+        Some(RemoteVersion {
+            version: self.version_data.semver,
+            source,
+            archive_name: package.name?,
+            download_url: package.link?,
+            checksum_url: package.checksum_link,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AdoptiumBinary {
+    package: AdoptiumPackage,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdoptiumPackage {
+    name: Option<String>,
+    link: Option<String>,
+    checksum_link: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdoptiumVersionData {
+    semver: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_major_versions() {
+        assert_eq!(resolve_feature_version("17").unwrap(), 17);
+        assert_eq!(resolve_feature_version("17.0.10").unwrap(), 17);
+        assert_eq!(resolve_feature_version("lts").unwrap(), 21);
+    }
+
+    #[test]
+    fn maps_platform_names() {
+        assert!(!operating_system().is_empty());
+        assert!(!architecture().is_empty());
+    }
+}
