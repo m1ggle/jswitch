@@ -36,6 +36,10 @@ pub enum Command {
     List(commands::list::ListArgs),
     /// Show the current active Java version.
     Current,
+    /// Remove an installed Java version.
+    Remove(commands::remove::RemoveArgs),
+    /// Manage version aliases.
+    Alias(commands::alias::AliasArgs),
     /// Manage configuration.
     Config(commands::config::ConfigArgs),
     /// Generate shell completion scripts.

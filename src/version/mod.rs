@@ -1,14 +1,9 @@
-use serde::{Deserialize, Serialize};
+pub mod java_version;
+pub mod manager;
+pub mod metadata;
+pub mod resolver;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JavaVersion {
-    pub value: String,
-}
-
-impl JavaVersion {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self {
-            value: value.into(),
-        }
-    }
-}
+pub use java_version::JavaVersion;
+pub use manager::VersionManager;
+pub use metadata::VersionMetadata;
+pub use resolver::{CurrentVersion, VersionResolver, VersionSource};

@@ -1,6 +1,13 @@
-use crate::Result;
+use crate::{Result, config::Config, version::VersionResolver};
 
 pub async fn run() -> Result<()> {
-    println!("show current Java version");
+    let config = Config::load_or_default()?;
+    let resolver = VersionResolver::new(config);
+
+    match resolver.current()? {
+        Some(current) => println!("{} ({})", current.version, current.source),
+        None => println!("no Java version selected"),
+    }
+
     Ok(())
 }

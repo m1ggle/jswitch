@@ -70,8 +70,50 @@ pub enum NetworkError {
 
 #[derive(Debug, Error)]
 pub enum VersionError {
+    #[error("home directory not available")]
+    HomeDirUnavailable,
     #[error("Java version not found: {0}")]
     NotFound(String),
     #[error("invalid Java version: {0}")]
     Invalid(String),
+    #[error("cannot remove active Java version {version}; use --force to override")]
+    ActiveVersion { version: String },
+    #[error("failed to read versions directory {path}: {source}")]
+    ReadDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to read entry in versions directory {path}: {source}")]
+    ReadDirEntry {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to read metadata for {path}: {source}")]
+    Metadata {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to remove version directory {path}: {source}")]
+    RemoveDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to read file {path}: {source}")]
+    ReadFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to write file {path}: {source}")]
+    WriteFile {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to get current directory: {0}")]
+    CurrentDir(#[source] io::Error),
 }

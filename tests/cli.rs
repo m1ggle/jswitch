@@ -1,7 +1,7 @@
 use clap::Parser;
 use jswitch::{
     Cli, Command,
-    commands::{completion::CompletionShell, install::JavaSource},
+    commands::{alias::AliasAction, completion::CompletionShell, install::JavaSource},
 };
 
 #[test]
@@ -37,6 +37,35 @@ fn parses_switch_scope_flags() {
             assert!(!args.session);
         }
         command => panic!("expected switch command, got {command:?}"),
+    }
+}
+
+#[test]
+fn parses_remove_command() {
+    let cli = Cli::parse_from(["jswitch", "remove", "11", "--force"]);
+
+    match cli.command {
+        Command::Remove(args) => {
+            assert_eq!(args.version, "11");
+            assert!(args.force);
+        }
+        command => panic!("expected remove command, got {command:?}"),
+    }
+}
+
+#[test]
+fn parses_alias_set_command() {
+    let cli = Cli::parse_from(["jswitch", "alias", "set", "lts", "21"]);
+
+    match cli.command {
+        Command::Alias(args) => match args.action {
+            AliasAction::Set { name, version } => {
+                assert_eq!(name, "lts");
+                assert_eq!(version, "21");
+            }
+            action => panic!("expected alias set action, got {action:?}"),
+        },
+        command => panic!("expected alias command, got {command:?}"),
     }
 }
 
