@@ -126,6 +126,22 @@ javac -version
 jswitch doctor
 ```
 
+### 5. 体验与稳定性
+
+```bash
+# 启用调试日志
+JSWITCH_DEBUG=true jswitch current
+RUST_LOG=jswitch=debug jswitch install 17 --source corretto
+
+# 静默安装（不显示进度条）
+JSWITCH_QUIET=true jswitch install 17
+
+# 生成 shell 补全脚本
+jswitch completion zsh > ~/.zfunc/_jswitch
+```
+
+更多诊断、日志、进度条和补全说明见 [docs/stability.md](docs/stability.md) 与 [docs/completion.md](docs/completion.md)。
+
 ## 📖 详细使用指南
 
 ### 版本管理

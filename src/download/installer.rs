@@ -5,6 +5,8 @@ use std::{
 };
 
 use flate2::read::GzDecoder;
+use futures_util::StreamExt;
+use tracing::debug;
 
 use crate::{
     error::jswitch_error::NetworkError,
@@ -30,6 +32,7 @@ impl JavaInstaller {
         let archive_path = cache_dir.join(&remote.archive_name);
         let install_dir = self.manager.versions_dir().join(&remote.version);
 
+        debug!(version = %remote.version, source = ?remote.source, "starting install");
         fs::create_dir_all(&cache_dir).map_err(|source| NetworkError::CreateDir {
             path: cache_dir.clone(),
             source,
@@ -38,6 +41,7 @@ impl JavaInstaller {
 
         self.download(&remote.download_url, &archive_path).await?;
         if let Some(checksum_url) = &remote.checksum_url {
+            debug!(%checksum_url, "fetching checksum");
             let checksum = self
                 .client
                 .inner()
@@ -50,6 +54,7 @@ impl JavaInstaller {
             verify_sha256(&archive_path, &checksum)?;
         }
 
+        debug!(archive = %archive_path.display(), "unpacking archive");
         unpack_archive(&archive_path, &temp_dir)?;
         write_metadata(&temp_dir, remote)?;
 
@@ -61,14 +66,16 @@ impl JavaInstaller {
         }
         fs::rename(&temp_dir, &install_dir).map_err(|source| NetworkError::Rename {
             from: temp_dir,
-            to: install_dir,
+            to: install_dir.clone(),
             source,
         })?;
 
+        debug!(path = %install_dir.display(), "install complete");
         Ok(())
     }
 
     async fn download(&self, url: &str, path: &Path) -> Result<(), NetworkError> {
+        debug!(%url, path = %path.display(), "downloading archive");
         let response = self
             .client
             .inner()
@@ -77,18 +84,24 @@ impl JavaInstaller {
             .await?
             .error_for_status()?;
         let mut progress = DownloadProgress::new(response.content_length());
-        let bytes = response.bytes().await?;
-        progress.advance(bytes.len() as u64);
-
+        let mut stream = response.bytes_stream();
         let mut file = File::create(path).map_err(|source| NetworkError::WriteFile {
             path: path.to_path_buf(),
             source,
         })?;
-        file.write_all(&bytes)
-            .map_err(|source| NetworkError::WriteFile {
-                path: path.to_path_buf(),
-                source,
-            })
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk)
+                .map_err(|source| NetworkError::WriteFile {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            progress.advance(chunk.len() as u64);
+        }
+        progress.finish();
+
+        Ok(())
     }
 }
 

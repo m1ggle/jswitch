@@ -9,13 +9,17 @@ clap_complete = "4"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 dirs = "6"
 toml = "0.8"
 sha2 = "0.10"
 tar = "0.4"
 flate2 = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+futures-util = "0.3"
+indicatif = "0.17"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3"

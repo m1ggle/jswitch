@@ -93,3 +93,10 @@ fn parses_completion_shell() {
         command => panic!("expected completion command, got {command:?}"),
     }
 }
+
+#[test]
+fn parses_doctor_command() {
+    let cli = Cli::parse_from(["jswitch", "doctor"]);
+
+    assert!(matches!(cli.command, Command::Doctor));
+}
