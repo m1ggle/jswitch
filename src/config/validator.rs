@@ -6,6 +6,7 @@ impl Config {
     pub fn get(&self, key: &str) -> Result<Option<String>, ConfigError> {
         let value = match key {
             "global.default_version" => self.global.default_version.clone(),
+            "global.mirror_enabled" => Some(self.global.mirror_enabled.to_string()),
             "global.mirror_url" => self.global.mirror_url.clone(),
             "global.auto_update" => Some(self.global.auto_update.to_string()),
             "global.check_updates" => Some(self.global.check_updates.to_string()),
@@ -29,6 +30,7 @@ impl Config {
     pub fn set(&mut self, key: &str, value: String) -> Result<(), ConfigError> {
         match key {
             "global.default_version" => self.global.default_version = Some(value),
+            "global.mirror_enabled" => self.global.mirror_enabled = parse_bool(key, &value)?,
             "global.mirror_url" => self.global.mirror_url = Some(value),
             "global.auto_update" => self.global.auto_update = parse_bool(key, &value)?,
             "global.check_updates" => self.global.check_updates = parse_bool(key, &value)?,
@@ -56,6 +58,10 @@ impl Config {
             (
                 "global.default_version".to_owned(),
                 format_option(&self.global.default_version),
+            ),
+            (
+                "global.mirror_enabled".to_owned(),
+                self.global.mirror_enabled.to_string(),
             ),
             (
                 "global.mirror_url".to_owned(),
@@ -164,6 +170,32 @@ mod tests {
         assert_eq!(
             config.get("plugins.maven").unwrap(),
             Some("true".to_owned())
+        );
+    }
+
+    #[test]
+    fn supports_mirror_enabled_key() {
+        let mut config = Config::default();
+
+        assert_eq!(
+            config.get("global.mirror_enabled").unwrap(),
+            Some("true".to_owned())
+        );
+
+        config
+            .set("global.mirror_enabled", "false".to_owned())
+            .unwrap();
+
+        assert_eq!(
+            config.get("global.mirror_enabled").unwrap(),
+            Some("false".to_owned())
+        );
+
+        let entries = config.entries();
+        assert!(
+            entries
+                .iter()
+                .any(|(key, value)| key == "global.mirror_enabled" && value == "false")
         );
     }
 

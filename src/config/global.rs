@@ -16,10 +16,14 @@ pub struct Config {
     pub plugins: PluginsConfig,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalConfig {
     #[serde(default)]
     pub default_version: Option<String>,
+    /// When false, all mirror and per-source override settings are ignored
+    /// and downloads always go to the upstream defaults.
+    #[serde(default = "default_true")]
+    pub mirror_enabled: bool,
     #[serde(default)]
     pub mirror_url: Option<String>,
     #[serde(default)]
@@ -28,6 +32,23 @@ pub struct GlobalConfig {
     pub check_updates: bool,
     #[serde(default)]
     pub quiet_mode: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self {
+            default_version: None,
+            mirror_enabled: true,
+            mirror_url: None,
+            auto_update: false,
+            check_updates: false,
+            quiet_mode: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

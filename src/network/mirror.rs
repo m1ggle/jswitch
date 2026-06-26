@@ -28,6 +28,12 @@ pub struct MirrorResolver {
 
 impl MirrorResolver {
     pub fn from_config(config: &crate::config::Config) -> Self {
+        // When mirror is disabled, ignore all mirror and source override
+        // settings — downloads always use upstream defaults.
+        if !config.global.mirror_enabled {
+            return Self::default();
+        }
+
         let global_mirror = std::env::var("JSWITCH_MIRROR_URL")
             .ok()
             .or_else(|| config.global.mirror_url.clone());
@@ -196,5 +202,43 @@ mod tests {
     fn returns_original_for_malformed_url() {
         let result = replace_base("not-a-url", "https://mirror.com");
         assert_eq!(result, "not-a-url");
+    }
+
+    #[test]
+    fn mirror_disabled_ignores_all_mirror_config() {
+        let mut config = Config::default();
+        config.global.mirror_enabled = false;
+        config.global.mirror_url = Some("https://mirror.example.com".to_owned());
+        config.sources.corretto = Some("https://my-mirror.com/corretto".to_owned());
+        config.sources.oracle = Some("https://my-mirror.com/oracle".to_owned());
+
+        let resolver = MirrorResolver::from_config(&config);
+
+        // No overrides should be active.
+        assert!(!resolver.has_source_override(JavaSource::Corretto));
+        assert!(!resolver.has_source_override(JavaSource::Oracle));
+        assert!(!resolver.has_mirror());
+
+        // base_url returns the default upstream, not the configured mirror.
+        assert_eq!(
+            resolver.base_url(
+                JavaSource::Corretto,
+                "https://corretto.aws/downloads/latest"
+            ),
+            "https://corretto.aws/downloads/latest"
+        );
+
+        // resolve_global is a no-op.
+        let url = "https://corretto.aws/downloads/latest/file.tar.gz";
+        assert_eq!(resolver.resolve_global(url), url);
+    }
+
+    #[test]
+    fn mirror_enabled_defaults_to_true() {
+        let config = Config::default();
+        assert!(config.global.mirror_enabled);
+
+        let resolver = MirrorResolver::from_config(&config);
+        assert!(!resolver.has_mirror());
     }
 }

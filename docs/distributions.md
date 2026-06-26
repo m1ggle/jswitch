@@ -44,6 +44,26 @@ jswitch install 17 --source corretto --use-now
 
 jswitch 支持两种镜像源配置方式，可以加速在中国大陆等地区的下载速度。
 
+### 开关：global.mirror_enabled
+
+通过 `global.mirror_enabled` 控制是否启用镜像功能。**默认为 `true`（开启）**。
+
+- **`true`（默认）**：使用 `sources.*` 和 `global.mirror_url` 的配置进行镜像下载。
+- **`false`（关闭）**：忽略所有镜像和自定义源配置，始终从上游默认地址下载。
+
+```bash
+# 关闭镜像，走默认下载
+jswitch config set global.mirror_enabled false
+
+# 重新开启镜像
+jswitch config set global.mirror_enabled true
+
+# 查看当前状态
+jswitch config get global.mirror_enabled
+```
+
+> **提示**：关闭镜像后，之前配置的 `sources.*` 和 `global.mirror_url` 仍然保留在配置文件中，但不会被使用。重新开启后立即生效。
+
 ### 方式一：按发行版配置（sources.\*）
 
 为每个发行版指定独立的下载 base URL。配置后，jswitch 会使用该 URL 作为该发行版的完整下载基址，**直接拼接归档文件名**，不会与上游 URL 做主机替换。
@@ -108,6 +128,8 @@ JSWITCH_MIRROR_URL="https://mirror.example.com" jswitch install 17 --source corr
 ### 优先级总结
 
 ```
+global.mirror_enabled = false  →  忽略所有镜像配置，走上游默认
+global.mirror_enabled = true（默认）  ↓
 环境变量 JSWITCH_MIRROR_URL
         ↓
 全局镜像 (global.mirror_url)  —— 主机替换，保留路径
@@ -157,6 +179,7 @@ export JSWITCH_HTTPS_PROXY="http://proxy:8080"
 ```toml
 [global]
 default_version = "17"
+mirror_enabled = true        # 开启镜像（默认 true），设为 false 则走上游默认
 mirror_url = "https://mirrors.tuna.tsinghua.edu.cn"
 auto_update = true
 check_updates = true
@@ -215,10 +238,13 @@ corretto = "https://my-mirror.com/corretto"
 jswitch config show
 
 # 查看特定配置项
+jswitch config get global.mirror_enabled
 jswitch config get global.mirror_url
 jswitch config get sources.corretto
 
 # 设置配置项
+jswitch config set global.mirror_enabled false   # 关闭镜像
+jswitch config set global.mirror_enabled true    # 开启镜像
 jswitch config set global.mirror_url "https://mirror.example.com"
 jswitch config set sources.corretto "https://my-mirror.com/corretto"
 
