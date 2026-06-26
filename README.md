@@ -135,6 +135,8 @@ JSWITCH_QUIET=true jswitch install 17
 jswitch completion zsh > ~/.zfunc/_jswitch
 ```
 
+Shell 集成原理见 [docs/shell-integration.md](docs/shell-integration.md)。
+
 更多诊断、日志、进度条和补全说明见 [docs/stability.md](docs/stability.md) 与 [docs/completion.md](docs/completion.md)。
 
 ## 📖 详细使用指南
