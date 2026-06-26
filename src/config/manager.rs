@@ -95,18 +95,6 @@ mod tests {
             .unwrap();
         config.set("aliases.lts", "21".to_owned()).unwrap();
         config.set("global.auto_update", "true".to_owned()).unwrap();
-        config
-            .set(
-                "sources.openjdk",
-                "https://download.java.net/java/GA/jdk".to_owned(),
-            )
-            .unwrap();
-        config
-            .set(
-                "proxy.http_proxy",
-                "http://proxy.company.com:8080".to_owned(),
-            )
-            .unwrap();
         config.set("plugins.maven", "true".to_owned()).unwrap();
 
         config.save_to_path(&path).unwrap();
@@ -120,14 +108,6 @@ mod tests {
         assert_eq!(
             loaded.get("global.auto_update").unwrap(),
             Some("true".to_owned())
-        );
-        assert_eq!(
-            loaded.get("sources.openjdk").unwrap(),
-            Some("https://download.java.net/java/GA/jdk".to_owned())
-        );
-        assert_eq!(
-            loaded.get("proxy.http_proxy").unwrap(),
-            Some("http://proxy.company.com:8080".to_owned())
         );
         assert_eq!(
             loaded.get("plugins.maven").unwrap(),

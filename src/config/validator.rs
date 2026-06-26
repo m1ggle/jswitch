@@ -6,19 +6,10 @@ impl Config {
     pub fn get(&self, key: &str) -> Result<Option<String>, ConfigError> {
         let value = match key {
             "global.default_version" => self.global.default_version.clone(),
-            "global.mirror_enabled" => Some(self.global.mirror_enabled.to_string()),
-            "global.mirror_url" => self.global.mirror_url.clone(),
             "global.auto_update" => Some(self.global.auto_update.to_string()),
             "global.check_updates" => Some(self.global.check_updates.to_string()),
             "global.quiet_mode" => Some(self.global.quiet_mode.to_string()),
             key if key.starts_with("aliases.") => self.aliases.get(&key[8..]).cloned(),
-            "sources.openjdk" => self.sources.openjdk.clone(),
-            "sources.corretto" => self.sources.corretto.clone(),
-            "sources.adoptopenjdk" => self.sources.adoptopenjdk.clone(),
-            "sources.oracle" => self.sources.oracle.clone(),
-            "proxy.http_proxy" => self.proxy.http_proxy.clone(),
-            "proxy.https_proxy" => self.proxy.https_proxy.clone(),
-            "proxy.no_proxy" => self.proxy.no_proxy.clone(),
             "plugins.maven" => Some(self.plugins.maven.to_string()),
             "plugins.gradle" => Some(self.plugins.gradle.to_string()),
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
@@ -30,21 +21,12 @@ impl Config {
     pub fn set(&mut self, key: &str, value: String) -> Result<(), ConfigError> {
         match key {
             "global.default_version" => self.global.default_version = Some(value),
-            "global.mirror_enabled" => self.global.mirror_enabled = parse_bool(key, &value)?,
-            "global.mirror_url" => self.global.mirror_url = Some(value),
             "global.auto_update" => self.global.auto_update = parse_bool(key, &value)?,
             "global.check_updates" => self.global.check_updates = parse_bool(key, &value)?,
             "global.quiet_mode" => self.global.quiet_mode = parse_bool(key, &value)?,
             key if key.starts_with("aliases.") => {
                 self.aliases.insert(key[8..].to_owned(), value);
             }
-            "sources.openjdk" => self.sources.openjdk = Some(value),
-            "sources.corretto" => self.sources.corretto = Some(value),
-            "sources.adoptopenjdk" => self.sources.adoptopenjdk = Some(value),
-            "sources.oracle" => self.sources.oracle = Some(value),
-            "proxy.http_proxy" => self.proxy.http_proxy = Some(value),
-            "proxy.https_proxy" => self.proxy.https_proxy = Some(value),
-            "proxy.no_proxy" => self.proxy.no_proxy = Some(value),
             "plugins.maven" => self.plugins.maven = parse_bool(key, &value)?,
             "plugins.gradle" => self.plugins.gradle = parse_bool(key, &value)?,
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
@@ -58,14 +40,6 @@ impl Config {
             (
                 "global.default_version".to_owned(),
                 format_option(&self.global.default_version),
-            ),
-            (
-                "global.mirror_enabled".to_owned(),
-                self.global.mirror_enabled.to_string(),
-            ),
-            (
-                "global.mirror_url".to_owned(),
-                format_option(&self.global.mirror_url),
             ),
             (
                 "global.auto_update".to_owned(),
@@ -88,34 +62,6 @@ impl Config {
         );
 
         entries.extend([
-            (
-                "sources.openjdk".to_owned(),
-                format_option(&self.sources.openjdk),
-            ),
-            (
-                "sources.corretto".to_owned(),
-                format_option(&self.sources.corretto),
-            ),
-            (
-                "sources.adoptopenjdk".to_owned(),
-                format_option(&self.sources.adoptopenjdk),
-            ),
-            (
-                "sources.oracle".to_owned(),
-                format_option(&self.sources.oracle),
-            ),
-            (
-                "proxy.http_proxy".to_owned(),
-                format_option(&self.proxy.http_proxy),
-            ),
-            (
-                "proxy.https_proxy".to_owned(),
-                format_option(&self.proxy.https_proxy),
-            ),
-            (
-                "proxy.no_proxy".to_owned(),
-                format_option(&self.proxy.no_proxy),
-            ),
             ("plugins.maven".to_owned(), self.plugins.maven.to_string()),
             ("plugins.gradle".to_owned(), self.plugins.gradle.to_string()),
         ]);
@@ -146,12 +92,6 @@ mod tests {
             .set("global.default_version", "17".to_owned())
             .unwrap();
         config.set("aliases.lts", "21".to_owned()).unwrap();
-        config
-            .set("sources.openjdk", "https://example.com/openjdk".to_owned())
-            .unwrap();
-        config
-            .set("proxy.http_proxy", "http://proxy:8080".to_owned())
-            .unwrap();
         config.set("plugins.maven", "true".to_owned()).unwrap();
 
         assert_eq!(
@@ -160,42 +100,8 @@ mod tests {
         );
         assert_eq!(config.get("aliases.lts").unwrap(), Some("21".to_owned()));
         assert_eq!(
-            config.get("sources.openjdk").unwrap(),
-            Some("https://example.com/openjdk".to_owned())
-        );
-        assert_eq!(
-            config.get("proxy.http_proxy").unwrap(),
-            Some("http://proxy:8080".to_owned())
-        );
-        assert_eq!(
             config.get("plugins.maven").unwrap(),
             Some("true".to_owned())
-        );
-    }
-
-    #[test]
-    fn supports_mirror_enabled_key() {
-        let mut config = Config::default();
-
-        assert_eq!(
-            config.get("global.mirror_enabled").unwrap(),
-            Some("true".to_owned())
-        );
-
-        config
-            .set("global.mirror_enabled", "false".to_owned())
-            .unwrap();
-
-        assert_eq!(
-            config.get("global.mirror_enabled").unwrap(),
-            Some("false".to_owned())
-        );
-
-        let entries = config.entries();
-        assert!(
-            entries
-                .iter()
-                .any(|(key, value)| key == "global.mirror_enabled" && value == "false")
         );
     }
 

@@ -13,16 +13,16 @@ use crate::{
     version::{VersionManager, VersionMetadata},
 };
 
-use super::{DownloadClient, RemoteVersion, progress::DownloadProgress, verify_sha256};
+use super::{RemoteVersion, progress::DownloadProgress, verify_sha256};
 
 #[derive(Debug, Clone)]
 pub struct JavaInstaller {
-    client: DownloadClient,
+    client: reqwest::Client,
     manager: VersionManager,
 }
 
 impl JavaInstaller {
-    pub fn new(client: DownloadClient, manager: VersionManager) -> Self {
+    pub fn new(client: reqwest::Client, manager: VersionManager) -> Self {
         Self { client, manager }
     }
 
@@ -44,7 +44,6 @@ impl JavaInstaller {
             debug!(%checksum_url, "fetching checksum");
             let checksum = self
                 .client
-                .inner()
                 .get(checksum_url)
                 .send()
                 .await?
@@ -76,13 +75,7 @@ impl JavaInstaller {
 
     async fn download(&self, url: &str, path: &Path) -> Result<(), NetworkError> {
         debug!(%url, path = %path.display(), "downloading archive");
-        let response = self
-            .client
-            .inner()
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = self.client.get(url).send().await?.error_for_status()?;
         let mut progress = DownloadProgress::new(response.content_length());
         let mut stream = response.bytes_stream();
         let mut file = File::create(path).map_err(|source| NetworkError::WriteFile {

@@ -170,9 +170,6 @@ jswitch remove 1.8.0 --force  # 强制移除当前使用的版本
 # 显示当前配置
 jswitch config show
 
-# 设置镜像源（加速下载）
-jswitch config set mirror_url "https://mirrors.tuna.tsinghua.edu.cn/AdoptOpenJDK/"
-
 # 设置自动更新
 jswitch config set auto_update true
 
@@ -181,7 +178,7 @@ jswitch config set alias.lts "17"
 jswitch config set alias.latest "21"
 
 # 获取特定配置
-jswitch config get mirror_url
+jswitch config get global.default_version
 
 # 列出所有配置
 jswitch config list
@@ -253,7 +250,6 @@ jswitch self-update
 # ~/.jswitch/config.toml
 [global]
 default_version = "17"
-mirror_url = "https://mirrors.tuna.tsinghua.edu.cn/AdoptOpenJDK/"
 auto_update = true
 check_updates = true
 quiet_mode = false
@@ -264,18 +260,6 @@ latest = "21"
 stable = "11"
 myproject = "11.0.2"
 
-[sources]
-openjdk = "https://download.java.net/java/GA/jdk"
-corretto = "https://corretto.aws/downloads/resources"
-adoptopenjdk = "https://github.com/adoptium/temurin17-binaries/releases"
-oracle = "https://download.oracle.com/java"
-
-[proxy]
-# 代理设置（可选）
-http_proxy = "http://proxy.company.com:8080"
-https_proxy = "http://proxy.company.com:8080"
-no_proxy = "localhost,127.0.0.1"
-
 [plugins]
 # 插件配置
 maven = true
@@ -285,13 +269,6 @@ gradle = true
 ### 环境变量
 
 ```bash
-# 覆盖配置中的镜像源
-export JSWITCH_MIRROR_URL="https://mirror.example.com/"
-
-# 设置代理
-export JSWITCH_HTTP_PROXY="http://proxy:8080"
-export JSWITCH_HTTPS_PROXY="http://proxy:8080"
-
 # 调试模式
 export JSWITCH_DEBUG=true
 export RUST_LOG=jswitch=debug
@@ -349,11 +326,6 @@ jswitch/
 │   │   ├── operations.rs   # 文件操作
 │   │   ├── cache.rs        # 缓存管理
 │   │   └── lockfile.rs     # 锁文件
-│   ├── network/            # 网络相关
-│   │   ├── mod.rs
-│   │   ├── client.rs       # HTTP 客户端
-│   │   ├── mirror.rs       # 镜像管理
-│   │   └── proxy.rs        # 代理支持
 │   ├── error/              # 错误处理
 │   │   ├── mod.rs
 │   │   ├── jswitch_error.rs # 主错误类型
