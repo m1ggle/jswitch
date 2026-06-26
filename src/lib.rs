@@ -7,6 +7,7 @@ pub mod config;
 pub mod download;
 pub mod env;
 pub mod error;
+pub mod network;
 pub mod utils;
 pub mod version;
 

@@ -6,6 +6,7 @@ use crate::{
     config::Config,
     download::{DownloadClient, JavaInstaller, VersionFetcher},
     error::jswitch_error::VersionError,
+    network::MirrorResolver,
     version::{JavaVersion, VersionManager, VersionResolver},
 };
 
@@ -20,7 +21,7 @@ pub struct InstallArgs {
     pub use_now: bool,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, clap::ValueEnum, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, clap::ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum JavaSource {
     OpenJdk,
@@ -38,8 +39,9 @@ pub async fn run(args: InstallArgs) -> Result<()> {
     let config = Config::load_or_default()?;
     let resolved = VersionResolver::new(config.clone()).resolve(&requested.value);
     let source = args.source.unwrap_or(JavaSource::Adoptopenjdk);
-    let client = DownloadClient::new();
-    let fetcher = VersionFetcher::new(client.clone());
+    let client = DownloadClient::from_config(&config);
+    let mirror = MirrorResolver::from_config(&config);
+    let fetcher = VersionFetcher::new(client.clone(), mirror);
     let remote = fetcher.fetch(&resolved, source).await?;
     let manager = VersionManager::from_default_root()?;
 

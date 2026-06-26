@@ -1,25 +1,8 @@
-#[derive(Debug, Clone)]
-pub struct DownloadClient {
-    inner: reqwest::Client,
-}
-
-impl DownloadClient {
-    pub fn new() -> Self {
-        Self {
-            inner: reqwest::Client::new(),
-        }
-    }
-
-    pub fn inner(&self) -> &reqwest::Client {
-        &self.inner
-    }
-}
-
-impl Default for DownloadClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// DownloadClient has moved to the `network` module so that proxy and mirror
+// resolution live alongside the HTTP client.  We re-export it here for
+// backward compatibility with existing call sites that import from
+// `download::DownloadClient`.
+pub use crate::network::DownloadClient;
 
 pub mod fetcher;
 pub mod installer;

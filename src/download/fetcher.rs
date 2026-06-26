@@ -1,12 +1,16 @@
 use serde::Deserialize;
 
-use crate::{commands::install::JavaSource, error::jswitch_error::NetworkError};
+use crate::{
+    commands::install::JavaSource, error::jswitch_error::NetworkError, network::MirrorResolver,
+};
 
 use super::DownloadClient;
 
 const ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
 const CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
 const CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
+const ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
+const OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA/jdk";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
@@ -20,11 +24,12 @@ pub struct RemoteVersion {
 #[derive(Debug, Clone)]
 pub struct VersionFetcher {
     client: DownloadClient,
+    mirror: MirrorResolver,
 }
 
 impl VersionFetcher {
-    pub fn new(client: DownloadClient) -> Self {
-        Self { client }
+    pub fn new(client: DownloadClient, mirror: MirrorResolver) -> Self {
+        Self { client, mirror }
     }
 
     pub async fn fetch(
@@ -34,20 +39,85 @@ impl VersionFetcher {
     ) -> Result<RemoteVersion, NetworkError> {
         let major = resolve_feature_version(requested)?;
 
-        if source == JavaSource::Corretto {
-            return Ok(corretto_remote_version(major));
+        match source {
+            JavaSource::Corretto => Ok(self.corretto_remote_version(major)),
+            JavaSource::Oracle => Ok(self.oracle_remote_version(major)),
+            JavaSource::OpenJdk => Ok(self.openjdk_remote_version(major)),
+            JavaSource::Adoptopenjdk => self.fetch_adoptium(major, source).await,
         }
+    }
 
-        let image_type = match source {
-            JavaSource::OpenJdk | JavaSource::Adoptopenjdk => "jdk",
-            JavaSource::Corretto | JavaSource::Oracle => "jdk",
-        };
+    // --- Corretto: direct URL construction (no API call needed) ---
+
+    fn corretto_remote_version(&self, major: u32) -> RemoteVersion {
+        let archive_name = corretto_archive_name(major);
+        let download_url = self.mirror.resolve(
+            JavaSource::Corretto,
+            &format!("{CORRETTO_BASE_URL}/{archive_name}"),
+        );
+        let checksum_url = self.mirror.resolve(
+            JavaSource::Corretto,
+            &format!("{CORRETTO_CHECKSUM_BASE_URL}/{archive_name}"),
+        );
+        RemoteVersion {
+            version: major.to_string(),
+            source: JavaSource::Corretto,
+            archive_name,
+            download_url,
+            checksum_url: Some(checksum_url),
+        }
+    }
+
+    // --- Oracle: direct URL, no checksum endpoint available ---
+
+    fn oracle_remote_version(&self, major: u32) -> RemoteVersion {
+        let archive_name = oracle_archive_name(major);
+        let download_url = self.mirror.resolve(
+            JavaSource::Oracle,
+            &format!("{ORACLE_BASE_URL}/{major}/latest/{archive_name}"),
+        );
+        RemoteVersion {
+            version: major.to_string(),
+            source: JavaSource::Oracle,
+            archive_name,
+            download_url,
+            // Oracle does not expose a standalone checksum endpoint.
+            checksum_url: None,
+        }
+    }
+
+    // --- OpenJDK (download.java.net): direct URL, no checksum endpoint ---
+
+    fn openjdk_remote_version(&self, major: u32) -> RemoteVersion {
+        let archive_name = openjdk_archive_name(major);
+        let download_url = self.mirror.resolve(
+            JavaSource::OpenJdk,
+            &format!("{OPENJDK_BASE_URL}/{major}/latest/{archive_name}"),
+        );
+        RemoteVersion {
+            version: major.to_string(),
+            source: JavaSource::OpenJdk,
+            archive_name,
+            download_url,
+            checksum_url: None,
+        }
+    }
+
+    // --- Adoptium (Eclipse Temurin): API-based discovery ---
+
+    async fn fetch_adoptium(
+        &self,
+        major: u32,
+        source: JavaSource,
+    ) -> Result<RemoteVersion, NetworkError> {
+        let image_type = "jdk";
         let url = format!(
             "{ADOPTIUM_BASE_URL}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
             architecture(),
             operating_system(),
             vendor(source),
         );
+        let url = self.mirror.resolve(source, &url);
 
         let assets = self
             .client
@@ -62,7 +132,7 @@ impl VersionFetcher {
         assets
             .into_iter()
             .find_map(|asset| asset.into_remote_version(source))
-            .ok_or_else(|| NetworkError::RemoteVersionNotFound(requested.to_owned()))
+            .ok_or_else(|| NetworkError::RemoteVersionNotFound(major.to_string()))
     }
 }
 
@@ -86,16 +156,7 @@ fn resolve_feature_version(requested: &str) -> Result<u32, NetworkError> {
     }
 }
 
-fn corretto_remote_version(major: u32) -> RemoteVersion {
-    let archive_name = corretto_archive_name(major);
-    RemoteVersion {
-        version: major.to_string(),
-        source: JavaSource::Corretto,
-        archive_name: archive_name.clone(),
-        download_url: format!("{CORRETTO_BASE_URL}/{archive_name}"),
-        checksum_url: Some(format!("{CORRETTO_CHECKSUM_BASE_URL}/{archive_name}")),
-    }
-}
+// --- Archive name builders ---
 
 fn corretto_archive_name(major: u32) -> String {
     let extension = if std::env::consts::OS == "windows" {
@@ -103,7 +164,6 @@ fn corretto_archive_name(major: u32) -> String {
     } else {
         "tar.gz"
     };
-
     format!(
         "amazon-corretto-{major}-{}-{}-jdk.{extension}",
         architecture(),
@@ -111,13 +171,33 @@ fn corretto_archive_name(major: u32) -> String {
     )
 }
 
-fn corretto_operating_system() -> &'static str {
-    match std::env::consts::OS {
-        "macos" => "macos",
-        "windows" => "windows",
-        _ => "linux",
-    }
+fn oracle_archive_name(major: u32) -> String {
+    let extension = if std::env::consts::OS == "windows" {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+    format!(
+        "jdk-{major}_{}-{}_bin.{extension}",
+        operating_system_for_archive(),
+        architecture(),
+    )
 }
+
+fn openjdk_archive_name(major: u32) -> String {
+    let extension = if std::env::consts::OS == "windows" {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+    format!(
+        "openjdk-{major}_{}-{}_bin.{extension}",
+        operating_system_for_archive(),
+        architecture(),
+    )
+}
+
+// --- Platform helpers ---
 
 fn vendor(source: JavaSource) -> &'static str {
     match source {
@@ -135,12 +215,27 @@ fn operating_system() -> &'static str {
     }
 }
 
+/// OS name as used in archive file names (e.g. `jdk-17_macos-aarch64_bin.tar.gz`).
+fn operating_system_for_archive() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macos",
+        "windows" => "windows",
+        _ => "linux",
+    }
+}
+
+fn corretto_operating_system() -> &'static str {
+    operating_system_for_archive()
+}
+
 fn architecture() -> &'static str {
     match std::env::consts::ARCH {
         "aarch64" => "aarch64",
         _ => "x64",
     }
 }
+
+// --- Adoptium API response types ---
 
 #[derive(Debug, Deserialize)]
 struct AdoptiumAsset {
@@ -199,7 +294,8 @@ mod tests {
 
     #[test]
     fn builds_corretto_remote_version_from_direct_urls() {
-        let remote = corretto_remote_version(17);
+        let fetcher = VersionFetcher::new(DownloadClient::new(), MirrorResolver::default());
+        let remote = fetcher.corretto_remote_version(17);
 
         assert_eq!(remote.version, "17");
         assert_eq!(remote.source, JavaSource::Corretto);
@@ -215,9 +311,74 @@ mod tests {
     }
 
     #[test]
+    fn builds_oracle_remote_version_without_checksum() {
+        let fetcher = VersionFetcher::new(DownloadClient::new(), MirrorResolver::default());
+        let remote = fetcher.oracle_remote_version(17);
+
+        assert_eq!(remote.version, "17");
+        assert_eq!(remote.source, JavaSource::Oracle);
+        assert!(remote.archive_name.starts_with("jdk-17_"));
+        assert!(remote.download_url.starts_with(ORACLE_BASE_URL));
+        assert!(remote.download_url.contains("/17/latest/"));
+        assert!(remote.checksum_url.is_none());
+    }
+
+    #[test]
+    fn builds_openjdk_remote_version_without_checksum() {
+        let fetcher = VersionFetcher::new(DownloadClient::new(), MirrorResolver::default());
+        let remote = fetcher.openjdk_remote_version(21);
+
+        assert_eq!(remote.version, "21");
+        assert_eq!(remote.source, JavaSource::OpenJdk);
+        assert!(remote.archive_name.starts_with("openjdk-21_"));
+        assert!(remote.download_url.starts_with(OPENJDK_BASE_URL));
+        assert!(remote.download_url.contains("/21/latest/"));
+        assert!(remote.checksum_url.is_none());
+    }
+
+    #[test]
+    fn corretto_version_applies_mirror() {
+        let mut config = crate::config::Config::default();
+        config.global.mirror_url = Some("https://mirror.example.com".to_owned());
+
+        let fetcher =
+            VersionFetcher::new(DownloadClient::new(), MirrorResolver::from_config(&config));
+        let remote = fetcher.corretto_remote_version(17);
+
+        assert!(
+            remote
+                .download_url
+                .starts_with("https://mirror.example.com/downloads/latest/")
+        );
+        assert!(
+            remote
+                .checksum_url
+                .unwrap()
+                .starts_with("https://mirror.example.com/downloads/latest_sha256/")
+        );
+    }
+
+    #[test]
+    fn oracle_version_applies_mirror() {
+        let mut config = crate::config::Config::default();
+        config.global.mirror_url = Some("https://mirror.example.com".to_owned());
+
+        let fetcher =
+            VersionFetcher::new(DownloadClient::new(), MirrorResolver::from_config(&config));
+        let remote = fetcher.oracle_remote_version(17);
+
+        assert!(
+            remote
+                .download_url
+                .starts_with("https://mirror.example.com/java/17/latest/")
+        );
+    }
+
+    #[test]
     fn builds_corretto_eight_url_for_legacy_java_version() {
+        let fetcher = VersionFetcher::new(DownloadClient::new(), MirrorResolver::default());
         let major = resolve_feature_version("1.8").unwrap();
-        let remote = corretto_remote_version(major);
+        let remote = fetcher.corretto_remote_version(major);
 
         assert_eq!(remote.version, "8");
         assert!(remote.archive_name.starts_with("amazon-corretto-8-"));
