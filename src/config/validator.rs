@@ -10,6 +10,11 @@ impl Config {
             "global.check_updates" => Some(self.global.check_updates.to_string()),
             "global.quiet_mode" => Some(self.global.quiet_mode.to_string()),
             key if key.starts_with("aliases.") => self.aliases.get(&key[8..]).cloned(),
+            "sources.adoptopenjdk" => self.sources.adoptopenjdk.clone(),
+            "sources.corretto" => self.sources.corretto.clone(),
+            "sources.corretto_checksum" => self.sources.corretto_checksum.clone(),
+            "sources.oracle" => self.sources.oracle.clone(),
+            "sources.openjdk" => self.sources.openjdk.clone(),
             "plugins.maven" => Some(self.plugins.maven.to_string()),
             "plugins.gradle" => Some(self.plugins.gradle.to_string()),
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
@@ -27,6 +32,11 @@ impl Config {
             key if key.starts_with("aliases.") => {
                 self.aliases.insert(key[8..].to_owned(), value);
             }
+            "sources.adoptopenjdk" => self.sources.adoptopenjdk = Some(value),
+            "sources.corretto" => self.sources.corretto = Some(value),
+            "sources.corretto_checksum" => self.sources.corretto_checksum = Some(value),
+            "sources.oracle" => self.sources.oracle = Some(value),
+            "sources.openjdk" => self.sources.openjdk = Some(value),
             "plugins.maven" => self.plugins.maven = parse_bool(key, &value)?,
             "plugins.gradle" => self.plugins.gradle = parse_bool(key, &value)?,
             _ => return Err(ConfigError::UnsupportedKey(key.to_owned())),
@@ -62,6 +72,26 @@ impl Config {
         );
 
         entries.extend([
+            (
+                "sources.adoptopenjdk".to_owned(),
+                format_option(&self.sources.adoptopenjdk),
+            ),
+            (
+                "sources.corretto".to_owned(),
+                format_option(&self.sources.corretto),
+            ),
+            (
+                "sources.corretto_checksum".to_owned(),
+                format_option(&self.sources.corretto_checksum),
+            ),
+            (
+                "sources.oracle".to_owned(),
+                format_option(&self.sources.oracle),
+            ),
+            (
+                "sources.openjdk".to_owned(),
+                format_option(&self.sources.openjdk),
+            ),
             ("plugins.maven".to_owned(), self.plugins.maven.to_string()),
             ("plugins.gradle".to_owned(), self.plugins.gradle.to_string()),
         ]);
@@ -131,5 +161,48 @@ mod tests {
         let error = config.set("unknown", "value".to_owned()).unwrap_err();
 
         assert!(matches!(error, ConfigError::UnsupportedKey(_)));
+    }
+
+    #[test]
+    fn sources_round_trip_through_get_set() {
+        let mut config = Config::default();
+        config
+            .set(
+                "sources.corretto",
+                "https://mirror.example.com/corretto".to_owned(),
+            )
+            .unwrap();
+        config
+            .set(
+                "sources.openjdk",
+                "https://mirror.example.com/openjdk".to_owned(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            config.get("sources.corretto").unwrap(),
+            Some("https://mirror.example.com/corretto".to_owned())
+        );
+        assert_eq!(
+            config.get("sources.openjdk").unwrap(),
+            Some("https://mirror.example.com/openjdk".to_owned())
+        );
+        assert_eq!(config.get("sources.oracle").unwrap(), None);
+    }
+
+    #[test]
+    fn entries_include_sources_keys() {
+        let mut config = Config::default();
+        config.sources.corretto = Some("https://mirror.example.com/corretto".to_owned());
+
+        let entries = config.entries();
+
+        assert!(entries.iter().any(|(key, value)| key == "sources.corretto"
+            && value == "https://mirror.example.com/corretto"));
+        assert!(
+            entries
+                .iter()
+                .any(|(key, value)| key == "sources.openjdk" && value == "<unset>")
+        );
     }
 }

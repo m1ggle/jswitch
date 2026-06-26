@@ -39,7 +39,7 @@ pub async fn run(args: InstallArgs) -> Result<()> {
     let resolved = VersionResolver::new(config.clone()).resolve(&requested.value);
     let source = args.source.unwrap_or(JavaSource::Adoptopenjdk);
     let client = reqwest::Client::new();
-    let fetcher = VersionFetcher::new(client.clone());
+    let fetcher = VersionFetcher::new(client.clone(), config.sources.clone());
     let remote = fetcher.fetch(&resolved, source).await?;
     let manager = VersionManager::from_default_root()?;
 

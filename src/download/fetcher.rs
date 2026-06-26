@@ -1,12 +1,15 @@
 use serde::Deserialize;
 
-use crate::{commands::install::JavaSource, error::jswitch_error::NetworkError};
+use crate::{
+    commands::install::JavaSource, config::global::SourcesConfig,
+    error::jswitch_error::NetworkError,
+};
 
-const ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
-const CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
-const CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
-const ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
-const OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA";
+const DEFAULT_ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
+const DEFAULT_CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
+const DEFAULT_CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
+const DEFAULT_ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
+const DEFAULT_OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
@@ -20,11 +23,52 @@ pub struct RemoteVersion {
 #[derive(Debug, Clone)]
 pub struct VersionFetcher {
     client: reqwest::Client,
+    sources: SourcesConfig,
 }
 
 impl VersionFetcher {
-    pub fn new(client: reqwest::Client) -> Self {
-        Self { client }
+    pub fn new(client: reqwest::Client, sources: SourcesConfig) -> Self {
+        Self { client, sources }
+    }
+
+    fn adoptium_base_url(&self) -> &str {
+        self.sources
+            .adoptopenjdk
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_ADOPTIUM_BASE_URL)
+    }
+
+    fn corretto_base_url(&self) -> &str {
+        self.sources
+            .corretto
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_CORRETTO_BASE_URL)
+    }
+
+    fn corretto_checksum_base_url(&self) -> &str {
+        self.sources
+            .corretto_checksum
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_CORRETTO_CHECKSUM_BASE_URL)
+    }
+
+    fn oracle_base_url(&self) -> &str {
+        self.sources
+            .oracle
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_ORACLE_BASE_URL)
+    }
+
+    fn openjdk_base_url(&self) -> &str {
+        self.sources
+            .openjdk
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_OPENJDK_BASE_URL)
     }
 
     pub async fn fetch(
@@ -46,8 +90,10 @@ impl VersionFetcher {
 
     fn corretto_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = corretto_archive_name(major);
-        let download_url = format!("{CORRETTO_BASE_URL}/{archive_name}");
-        let checksum_url = Some(format!("{CORRETTO_CHECKSUM_BASE_URL}/{archive_name}"));
+        let base = self.corretto_base_url();
+        let download_url = format!("{base}/{archive_name}");
+        let checksum_base = self.corretto_checksum_base_url();
+        let checksum_url = Some(format!("{checksum_base}/{archive_name}"));
 
         RemoteVersion {
             version: major.to_string(),
@@ -62,7 +108,8 @@ impl VersionFetcher {
 
     fn oracle_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = oracle_archive_name(major);
-        let download_url = format!("{ORACLE_BASE_URL}/{major}/latest/{archive_name}");
+        let base = self.oracle_base_url();
+        let download_url = format!("{base}/{major}/latest/{archive_name}");
 
         RemoteVersion {
             version: major.to_string(),
@@ -78,7 +125,8 @@ impl VersionFetcher {
 
     fn openjdk_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = openjdk_archive_name(major);
-        let download_url = format!("{OPENJDK_BASE_URL}/jdk{major}/latest/GPL/{archive_name}");
+        let base = self.openjdk_base_url();
+        let download_url = format!("{base}/jdk{major}/latest/GPL/{archive_name}");
 
         RemoteVersion {
             version: major.to_string(),
@@ -97,8 +145,9 @@ impl VersionFetcher {
         source: JavaSource,
     ) -> Result<RemoteVersion, NetworkError> {
         let image_type = "jdk";
+        let base = self.adoptium_base_url();
         let url = format!(
-            "{ADOPTIUM_BASE_URL}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
+            "{base}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
             architecture(),
             operating_system(),
             vendor(source),
@@ -279,17 +328,17 @@ mod tests {
 
     #[test]
     fn builds_corretto_remote_version_from_default_urls() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new());
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
         let remote = fetcher.corretto_remote_version(17);
 
         assert_eq!(remote.version, "17");
         assert_eq!(remote.source, JavaSource::Corretto);
         assert!(remote.archive_name.starts_with("amazon-corretto-17-"));
-        assert!(remote.download_url.starts_with(CORRETTO_BASE_URL));
+        assert!(remote.download_url.starts_with(DEFAULT_CORRETTO_BASE_URL));
         assert_eq!(
             remote.checksum_url,
             Some(format!(
-                "{CORRETTO_CHECKSUM_BASE_URL}/{}",
+                "{DEFAULT_CORRETTO_CHECKSUM_BASE_URL}/{}",
                 remote.archive_name
             ))
         );
@@ -297,20 +346,20 @@ mod tests {
 
     #[test]
     fn builds_oracle_remote_version_without_checksum() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new());
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
         let remote = fetcher.oracle_remote_version(17);
 
         assert_eq!(remote.version, "17");
         assert_eq!(remote.source, JavaSource::Oracle);
         assert!(remote.archive_name.starts_with("jdk-17_"));
-        assert!(remote.download_url.starts_with(ORACLE_BASE_URL));
+        assert!(remote.download_url.starts_with(DEFAULT_ORACLE_BASE_URL));
         assert!(remote.download_url.contains("/17/latest/"));
         assert!(remote.checksum_url.is_none());
     }
 
     #[test]
     fn builds_openjdk_remote_version_without_checksum() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new());
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
         let remote = fetcher.openjdk_remote_version(21);
 
         assert_eq!(remote.version, "21");
@@ -327,12 +376,57 @@ mod tests {
 
     #[test]
     fn builds_corretto_eight_url_for_legacy_java_version() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new());
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
         let major = resolve_feature_version("1.8").unwrap();
         let remote = fetcher.corretto_remote_version(major);
 
         assert_eq!(remote.version, "8");
         assert!(remote.archive_name.starts_with("amazon-corretto-8-"));
         assert!(remote.download_url.contains("amazon-corretto-8-"));
+    }
+
+    #[test]
+    fn uses_config_overridden_urls() {
+        let sources = SourcesConfig {
+            corretto: Some("https://my-mirror.example.com/corretto".to_owned()),
+            corretto_checksum: Some("https://my-mirror.example.com/corretto-checksums".to_owned()),
+            oracle: Some("https://my-mirror.example.com/oracle".to_owned()),
+            openjdk: Some("https://my-mirror.example.com/openjdk".to_owned()),
+            adoptopenjdk: Some("https://my-mirror.example.com/adoptium".to_owned()),
+        };
+
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), sources);
+
+        let corretto = fetcher.corretto_remote_version(17);
+        assert!(
+            corretto
+                .download_url
+                .starts_with("https://my-mirror.example.com/corretto/")
+        );
+        assert!(
+            corretto
+                .checksum_url
+                .unwrap()
+                .starts_with("https://my-mirror.example.com/corretto-checksums/")
+        );
+
+        let oracle = fetcher.oracle_remote_version(17);
+        assert!(
+            oracle
+                .download_url
+                .starts_with("https://my-mirror.example.com/oracle/17/latest/")
+        );
+
+        let openjdk = fetcher.openjdk_remote_version(21);
+        assert!(
+            openjdk
+                .download_url
+                .starts_with("https://my-mirror.example.com/openjdk/jdk21/latest/GPL/")
+        );
+
+        assert_eq!(
+            fetcher.adoptium_base_url(),
+            "https://my-mirror.example.com/adoptium"
+        );
     }
 }
