@@ -12,8 +12,7 @@
 - 🚀 **极速启动**：Rust 编译的二进制文件，启动速度超快
 - 🔒 **内存安全**：Rust 的所有权系统确保无内存错误
 - 🎯 **精准控制**：全局、项目、会话三级版本管理
-- 📦 **自动安装**：从多个源自动下载和安装 Java 版本
-- 🌐 **多发行版支持**：OpenJDK、Oracle JDK、Amazon Corretto、AdoptOpenJDK
+- 📦 **自动安装**：通过 Adoptium API 自动下载和安装 Eclipse Temurin (AdoptOpenJDK) 版本
 - 🔄 **智能切换**：自动更新 `JAVA_HOME` 和 `PATH` 环境变量
 - 🛡️ **安全可靠**：下载校验、版本验证、回滚机制
 - 🎨 **美观输出**：彩色终端输出、进度条、emoji 图标
@@ -85,10 +84,6 @@ jswitch install lts
 jswitch install 17
 jswitch install 11.0.2
 jswitch install 21.0.1
-
-# 从特定发行版安装
-jswitch install 17 --source corretto
-jswitch install 11 --source adoptopenjdk
 ```
 
 ### 3. 切换 Java 版本
@@ -131,7 +126,7 @@ jswitch doctor
 ```bash
 # 启用调试日志
 JSWITCH_DEBUG=true jswitch current
-RUST_LOG=jswitch=debug jswitch install 17 --source corretto
+RUST_LOG=jswitch=debug jswitch install 17
 
 # 静默安装（不显示进度条）
 JSWITCH_QUIET=true jswitch install 17
@@ -601,8 +596,8 @@ chore: 构建过程或辅助工具
 - [x] 基础 CLI 界面
 
 ### v0.2.0
-- [ ] 自动下载安装
-- [ ] 多发行版支持
+- [x] 自动下载安装
+- [x] Adoptium API 集成
 - [ ] Shell 自动完成
 
 ### v0.3.0
