@@ -6,7 +6,7 @@ const ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_rele
 const CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
 const CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
 const ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
-const OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA/jdk";
+const OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
@@ -78,7 +78,7 @@ impl VersionFetcher {
 
     fn openjdk_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = openjdk_archive_name(major);
-        let download_url = format!("{OPENJDK_BASE_URL}/{major}/latest/{archive_name}");
+        let download_url = format!("{OPENJDK_BASE_URL}/jdk{major}/latest/GPL/{archive_name}");
 
         RemoteVersion {
             version: major.to_string(),
@@ -316,8 +316,12 @@ mod tests {
         assert_eq!(remote.version, "21");
         assert_eq!(remote.source, JavaSource::OpenJdk);
         assert!(remote.archive_name.starts_with("openjdk-21_"));
-        assert!(remote.download_url.starts_with(OPENJDK_BASE_URL));
-        assert!(remote.download_url.contains("/21/latest/"));
+        assert!(
+            remote
+                .download_url
+                .starts_with("https://download.java.net/java/GA/jdk21/latest/GPL/")
+        );
+        assert!(remote.download_url.contains("/jdk21/latest/"));
         assert!(remote.checksum_url.is_none());
     }
 
