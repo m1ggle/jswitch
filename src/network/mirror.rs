@@ -2,13 +2,24 @@ use std::collections::HashMap;
 
 use crate::commands::install::JavaSource;
 
-/// Resolves the final download URL for a given distribution source by applying
-/// mirror overrides from `config.toml` or the `JSWITCH_MIRROR_URL` env var.
+/// Resolves the final download URL for a given distribution source.
 ///
-/// Resolution priority (highest wins):
-/// 1. Per-source override (`[sources]` table in config)
-/// 2. Global mirror (`global.mirror_url` or `JSWITCH_MIRROR_URL` env)
-/// 3. Original upstream URL (no rewrite)
+/// Two layers of URL rewriting are supported:
+///
+/// 1. **Per-source override** (`[sources]` table in config or `sources.*` keys):
+///    completely replaces the upstream base URL for that distribution.
+///    The fetcher uses this value directly and appends only the archive
+///    filename — no host-level rewriting is applied.
+///
+/// 2. **Global mirror** (`global.mirror_url` or `JSWITCH_MIRROR_URL` env):
+///    replaces the `scheme://host[:port]` prefix of every URL, preserving
+///    the path and query string.  Applied only when no per-source override
+///    is active for the distribution.
+///
+/// Priority (highest wins):
+/// 1. Per-source override — terminal, global mirror is not applied.
+/// 2. Global mirror — host replacement.
+/// 3. Original upstream URL (no rewrite).
 #[derive(Debug, Clone, Default)]
 pub struct MirrorResolver {
     global_mirror: Option<String>,
@@ -41,17 +52,28 @@ impl MirrorResolver {
         }
     }
 
-    /// Return the effective download URL for `source`, rewriting the base
-    /// when a mirror is configured.  If no mirror is set the original URL
-    /// is returned unchanged.
-    pub fn resolve(&self, source: JavaSource, original_url: &str) -> String {
-        if let Some(override_base) = self.source_overrides.get(&source) {
-            return replace_base(original_url, override_base);
-        }
+    /// Returns the effective base URL for a distribution.
+    /// If a per-source override is configured, return it; otherwise return
+    /// `default_base` unchanged.
+    pub fn base_url<'a>(&'a self, source: JavaSource, default_base: &'a str) -> &'a str {
+        self.source_overrides
+            .get(&source)
+            .map(|s| s.as_str())
+            .unwrap_or(default_base)
+    }
+
+    /// Returns true when a per-source override is configured for `source`.
+    pub fn has_source_override(&self, source: JavaSource) -> bool {
+        self.source_overrides.contains_key(&source)
+    }
+
+    /// Apply the global mirror (host replacement) to a fully-constructed URL.
+    /// If no global mirror is set, the URL is returned unchanged.
+    pub fn resolve_global(&self, url: &str) -> String {
         if let Some(mirror_base) = &self.global_mirror {
-            return replace_base(original_url, mirror_base);
+            return replace_base(url, mirror_base);
         }
-        original_url.to_owned()
+        url.to_owned()
     }
 
     /// True when at least one mirror (global or per-source) is active.
@@ -88,11 +110,11 @@ mod tests {
         let resolver = MirrorResolver::default();
         let url = "https://api.adoptium.net/v3/assets/feature_releases/17/ga";
 
-        assert_eq!(resolver.resolve(JavaSource::Adoptopenjdk, url), url);
+        assert_eq!(resolver.resolve_global(url), url);
     }
 
     #[test]
-    fn replaces_base_with_global_mirror() {
+    fn replaces_host_with_global_mirror() {
         let mut config = Config::default();
         config.global.mirror_url = Some("https://mirrors.tuna.tsinghua.edu.cn".to_owned());
 
@@ -100,31 +122,40 @@ mod tests {
         let url = "https://api.adoptium.net/v3/assets/feature_releases/17/ga";
 
         assert_eq!(
-            resolver.resolve(JavaSource::Adoptopenjdk, url),
+            resolver.resolve_global(url),
             "https://mirrors.tuna.tsinghua.edu.cn/v3/assets/feature_releases/17/ga"
         );
     }
 
     #[test]
-    fn per_source_override_takes_priority() {
+    fn source_override_replaces_base_url_completely() {
         let mut config = Config::default();
-        config.global.mirror_url = Some("https://global-mirror.com".to_owned());
+        config.sources.corretto = Some("https://my-mirror.com/corretto".to_owned());
+
+        let resolver = MirrorResolver::from_config(&config);
+
+        assert_eq!(
+            resolver.base_url(
+                JavaSource::Corretto,
+                "https://corretto.aws/downloads/latest"
+            ),
+            "https://my-mirror.com/corretto"
+        );
+        assert!(resolver.has_source_override(JavaSource::Corretto));
+    }
+
+    #[test]
+    fn source_override_does_not_affect_other_distributions() {
+        let mut config = Config::default();
         config.sources.corretto = Some("https://corretto-mirror.com".to_owned());
 
         let resolver = MirrorResolver::from_config(&config);
 
-        let corretto_url =
-            "https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz";
-        let adoptium_url = "https://api.adoptium.net/v3/assets";
-
         assert_eq!(
-            resolver.resolve(JavaSource::Corretto, corretto_url),
-            "https://corretto-mirror.com/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz"
+            resolver.base_url(JavaSource::Adoptopenjdk, "https://api.adoptium.net"),
+            "https://api.adoptium.net"
         );
-        assert_eq!(
-            resolver.resolve(JavaSource::Adoptopenjdk, adoptium_url),
-            "https://global-mirror.com/v3/assets"
-        );
+        assert!(!resolver.has_source_override(JavaSource::Adoptopenjdk));
     }
 
     #[test]
@@ -136,7 +167,7 @@ mod tests {
         let url = "https://upstream.com/path/to/file";
 
         assert_eq!(
-            resolver.resolve(JavaSource::Adoptopenjdk, url),
+            resolver.resolve_global(url),
             "https://mirror.com/path/to/file"
         );
     }
@@ -150,7 +181,7 @@ mod tests {
         let url = "https://upstream.com/path?architecture=x64&page_size=1";
 
         assert_eq!(
-            resolver.resolve(JavaSource::Adoptopenjdk, url),
+            resolver.resolve_global(url),
             "https://mirror.com/path?architecture=x64&page_size=1"
         );
     }

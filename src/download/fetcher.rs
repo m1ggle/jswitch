@@ -51,20 +51,32 @@ impl VersionFetcher {
 
     fn corretto_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = corretto_archive_name(major);
-        let download_url = self.mirror.resolve(
-            JavaSource::Corretto,
-            &format!("{CORRETTO_BASE_URL}/{archive_name}"),
-        );
-        let checksum_url = self.mirror.resolve(
-            JavaSource::Corretto,
-            &format!("{CORRETTO_CHECKSUM_BASE_URL}/{archive_name}"),
-        );
+        let base = self
+            .mirror
+            .base_url(JavaSource::Corretto, CORRETTO_BASE_URL);
+        let download_url = self
+            .mirror
+            .resolve_global(&format!("{base}/{archive_name}"));
+
+        // When a custom source override is set we cannot know the checksum URL
+        // structure of that mirror, so checksum verification is skipped.
+        // For the default base (or global mirror), the checksum URL is
+        // derived from the well-known Corretto endpoint.
+        let checksum_url = if self.mirror.has_source_override(JavaSource::Corretto) {
+            None
+        } else {
+            Some(
+                self.mirror
+                    .resolve_global(&format!("{CORRETTO_CHECKSUM_BASE_URL}/{archive_name}")),
+            )
+        };
+
         RemoteVersion {
             version: major.to_string(),
             source: JavaSource::Corretto,
             archive_name,
             download_url,
-            checksum_url: Some(checksum_url),
+            checksum_url,
         }
     }
 
@@ -72,10 +84,11 @@ impl VersionFetcher {
 
     fn oracle_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = oracle_archive_name(major);
-        let download_url = self.mirror.resolve(
-            JavaSource::Oracle,
-            &format!("{ORACLE_BASE_URL}/{major}/latest/{archive_name}"),
-        );
+        let base = self.mirror.base_url(JavaSource::Oracle, ORACLE_BASE_URL);
+        let download_url = self
+            .mirror
+            .resolve_global(&format!("{base}/{major}/latest/{archive_name}"));
+
         RemoteVersion {
             version: major.to_string(),
             source: JavaSource::Oracle,
@@ -90,10 +103,11 @@ impl VersionFetcher {
 
     fn openjdk_remote_version(&self, major: u32) -> RemoteVersion {
         let archive_name = openjdk_archive_name(major);
-        let download_url = self.mirror.resolve(
-            JavaSource::OpenJdk,
-            &format!("{OPENJDK_BASE_URL}/{major}/latest/{archive_name}"),
-        );
+        let base = self.mirror.base_url(JavaSource::OpenJdk, OPENJDK_BASE_URL);
+        let download_url = self
+            .mirror
+            .resolve_global(&format!("{base}/{major}/latest/{archive_name}"));
+
         RemoteVersion {
             version: major.to_string(),
             source: JavaSource::OpenJdk,
@@ -110,14 +124,17 @@ impl VersionFetcher {
         major: u32,
         source: JavaSource,
     ) -> Result<RemoteVersion, NetworkError> {
+        let base = self
+            .mirror
+            .base_url(JavaSource::Adoptopenjdk, ADOPTIUM_BASE_URL);
         let image_type = "jdk";
         let url = format!(
-            "{ADOPTIUM_BASE_URL}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
+            "{base}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
             architecture(),
             operating_system(),
             vendor(source),
         );
-        let url = self.mirror.resolve(source, &url);
+        let url = self.mirror.resolve_global(&url);
 
         let assets = self
             .client
@@ -293,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_corretto_remote_version_from_direct_urls() {
+    fn builds_corretto_remote_version_from_default_urls() {
         let fetcher = VersionFetcher::new(DownloadClient::new(), MirrorResolver::default());
         let remote = fetcher.corretto_remote_version(17);
 
@@ -337,7 +354,24 @@ mod tests {
     }
 
     #[test]
-    fn corretto_version_applies_mirror() {
+    fn corretto_source_override_uses_custom_base_and_skips_checksum() {
+        let mut config = crate::config::Config::default();
+        config.sources.corretto = Some("https://my-mirror.com/corretto".to_owned());
+
+        let fetcher =
+            VersionFetcher::new(DownloadClient::new(), MirrorResolver::from_config(&config));
+        let remote = fetcher.corretto_remote_version(17);
+
+        assert!(
+            remote
+                .download_url
+                .starts_with("https://my-mirror.com/corretto/amazon-corretto-17-")
+        );
+        assert!(remote.checksum_url.is_none());
+    }
+
+    #[test]
+    fn corretto_global_mirror_applies_host_replacement() {
         let mut config = crate::config::Config::default();
         config.global.mirror_url = Some("https://mirror.example.com".to_owned());
 
@@ -359,9 +393,9 @@ mod tests {
     }
 
     #[test]
-    fn oracle_version_applies_mirror() {
+    fn oracle_source_override_uses_custom_base() {
         let mut config = crate::config::Config::default();
-        config.global.mirror_url = Some("https://mirror.example.com".to_owned());
+        config.sources.oracle = Some("https://my-mirror.com/oracle".to_owned());
 
         let fetcher =
             VersionFetcher::new(DownloadClient::new(), MirrorResolver::from_config(&config));
@@ -370,7 +404,7 @@ mod tests {
         assert!(
             remote
                 .download_url
-                .starts_with("https://mirror.example.com/java/17/latest/")
+                .starts_with("https://my-mirror.com/oracle/17/latest/")
         );
     }
 
