@@ -9,7 +9,7 @@ const DEFAULT_ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feat
 const DEFAULT_CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
 const DEFAULT_CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
 const DEFAULT_ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
-const DEFAULT_OPENJDK_BASE_URL: &str = "https://download.java.net/java/GA";
+const DEFAULT_OPENJDK_PAGE_URL: &str = "https://jdk.java.net";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
@@ -63,12 +63,12 @@ impl VersionFetcher {
             .unwrap_or(DEFAULT_ORACLE_BASE_URL)
     }
 
-    fn openjdk_base_url(&self) -> &str {
+    fn openjdk_page_url(&self) -> &str {
         self.sources
             .openjdk
             .as_deref()
             .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_OPENJDK_BASE_URL)
+            .unwrap_or(DEFAULT_OPENJDK_PAGE_URL)
     }
 
     pub async fn fetch(
@@ -81,7 +81,7 @@ impl VersionFetcher {
         match source {
             JavaSource::Corretto => Ok(self.corretto_remote_version(major)),
             JavaSource::Oracle => Ok(self.oracle_remote_version(major)),
-            JavaSource::OpenJdk => Ok(self.openjdk_remote_version(major)),
+            JavaSource::OpenJdk => self.openjdk_remote_version(major).await,
             JavaSource::Adoptopenjdk => self.fetch_adoptium(major, source).await,
         }
     }
@@ -121,20 +121,28 @@ impl VersionFetcher {
         }
     }
 
-    // --- OpenJDK (download.java.net): direct URL, no checksum endpoint ---
+    // --- OpenJDK (jdk.java.net): HTML scraping for download URLs ---
+    //
+    // download.java.net URLs include version-specific hash/build segments
+    // (e.g. jdk17/0d48.../35/GPL/...) that can't be derived from the major
+    // version alone.  We fetch the jdk.java.net page and extract the real
+    // download URL from the HTML.
 
-    fn openjdk_remote_version(&self, major: u32) -> RemoteVersion {
-        let archive_name = openjdk_archive_name(major);
-        let base = self.openjdk_base_url();
-        let download_url = format!("{base}/jdk{major}/latest/GPL/{archive_name}");
+    async fn openjdk_remote_version(&self, major: u32) -> Result<RemoteVersion, NetworkError> {
+        let base = self.openjdk_page_url();
 
-        RemoteVersion {
-            version: major.to_string(),
-            source: JavaSource::OpenJdk,
-            archive_name,
-            download_url,
-            checksum_url: None,
+        // Try the version-specific page first (for current GA releases),
+        // then fall back to the archive page (for superseded versions).
+        for page_url in [format!("{base}/{major}/"), format!("{base}/archive/")] {
+            if let Ok(response) = self.client.get(&page_url).send().await
+                && let Ok(html) = response.text().await
+                && let Some(remote) = extract_openjdk_download(&html, major)
+            {
+                return Ok(remote);
+            }
         }
+
+        Err(NetworkError::RemoteVersionNotFound(major.to_string()))
     }
 
     // --- Adoptium (Eclipse Temurin): API-based discovery ---
@@ -228,6 +236,42 @@ fn openjdk_archive_name(major: u32) -> String {
         operating_system_for_archive(),
         architecture(),
     )
+}
+
+/// Extract the OpenJDK download URL from jdk.java.net HTML.
+///
+/// The page lists download links in `href` attributes like:
+///   `https://download.java.net/java/GA/jdk21/.../GPL/openjdk-21_macos-aarch64_bin.tar.gz`
+///
+/// We scan all `href="..."` values for one ending with the platform-specific
+/// archive name (excluding the `.sha256` variant) and derive both the download
+/// URL and checksum URL from it.
+fn extract_openjdk_download(html: &str, major: u32) -> Option<RemoteVersion> {
+    let archive_name = openjdk_archive_name(major);
+    let checksum_suffix = format!("{archive_name}.sha256");
+
+    let mut search_from = 0;
+    while let Some(rel) = html[search_from..].find("href=\"") {
+        let href_start = search_from + rel + 6;
+        let url_end = html[href_start..].find('"')?;
+        let url = &html[href_start..href_start + url_end];
+
+        if url.ends_with(&archive_name) && !url.ends_with(&checksum_suffix) {
+            let download_url = url.to_owned();
+            let checksum_url = Some(format!("{download_url}.sha256"));
+            return Some(RemoteVersion {
+                version: major.to_string(),
+                source: JavaSource::OpenJdk,
+                archive_name,
+                download_url,
+                checksum_url,
+            });
+        }
+
+        search_from = href_start + url_end + 1;
+    }
+
+    None
 }
 
 // --- Platform helpers ---
@@ -358,9 +402,23 @@ mod tests {
     }
 
     #[test]
-    fn builds_openjdk_remote_version_without_checksum() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
-        let remote = fetcher.openjdk_remote_version(21);
+    fn extracts_openjdk_download_url_from_html() {
+        let html = r#"
+        <html><body>
+        <h3>JDK 21</h3>
+        <ul>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-aarch64_bin.tar.gz">macOS aarch64</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-aarch64_bin.tar.gz.sha256">checksum</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-x64_bin.tar.gz">macOS x64</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-x64_bin.tar.gz.sha256">checksum</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_linux-x64_bin.tar.gz">Linux x64</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_linux-aarch64_bin.tar.gz">Linux aarch64</a></li>
+        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_windows-x64_bin.zip">Windows x64</a></li>
+        </ul>
+        </body></html>
+        "#;
+
+        let remote = extract_openjdk_download(html, 21).expect("should find download URL");
 
         assert_eq!(remote.version, "21");
         assert_eq!(remote.source, JavaSource::OpenJdk);
@@ -368,10 +426,17 @@ mod tests {
         assert!(
             remote
                 .download_url
-                .starts_with("https://download.java.net/java/GA/jdk21/latest/GPL/")
+                .starts_with("https://download.java.net/java/GA/jdk21/")
         );
-        assert!(remote.download_url.contains("/jdk21/latest/"));
-        assert!(remote.checksum_url.is_none());
+        assert!(!remote.download_url.ends_with(".sha256"));
+        assert!(remote.checksum_url.is_some());
+        assert!(remote.checksum_url.unwrap().ends_with(".sha256"));
+    }
+
+    #[test]
+    fn returns_none_when_openjdk_download_url_not_in_html() {
+        let html = "<html><body>No downloads here</body></html>";
+        assert!(extract_openjdk_download(html, 21).is_none());
     }
 
     #[test]
@@ -417,11 +482,11 @@ mod tests {
                 .starts_with("https://my-mirror.example.com/oracle/17/latest/")
         );
 
-        let openjdk = fetcher.openjdk_remote_version(21);
-        assert!(
-            openjdk
-                .download_url
-                .starts_with("https://my-mirror.example.com/openjdk/jdk21/latest/GPL/")
+        // OpenJDK uses HTML scraping, so the override applies to the page URL
+        // (jdk.java.net), not a direct download URL.
+        assert_eq!(
+            fetcher.openjdk_page_url(),
+            "https://my-mirror.example.com/openjdk"
         );
 
         assert_eq!(
