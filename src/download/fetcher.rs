@@ -3,7 +3,6 @@ use serde::Deserialize;
 use crate::{config::global::SourcesConfig, error::jswitch_error::NetworkError};
 
 const DEFAULT_ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
     pub version: String,
@@ -36,6 +35,25 @@ impl VersionFetcher {
         self.fetch_adoptium(major).await
     }
 
+    /// Fetch all available GA releases from Adoptium.
+    ///
+    /// Calls the `/info/available_releases` endpoint to discover which major
+    /// versions exist, then fetches the latest GA binary for each in parallel.
+    /// Versions that fail to resolve are silently skipped.
+    pub async fn list_remote(&self) -> Result<Vec<RemoteVersion>, NetworkError> {
+        let releases = self.fetch_available_releases().await?;
+
+        let futures: Vec<_> = releases
+            .available_releases
+            .into_iter()
+            .rev() // newest major first
+            .map(|major| self.fetch_adoptium(major))
+            .collect();
+
+        let results = futures_util::future::join_all(futures).await;
+        Ok(results.into_iter().filter_map(|r| r.ok()).collect())
+    }
+
     async fn fetch_adoptium(&self, major: u32) -> Result<RemoteVersion, NetworkError> {
         let image_type = "jdk";
         let base = self.adoptium_base_url();
@@ -58,6 +76,31 @@ impl VersionFetcher {
             .into_iter()
             .find_map(|asset| asset.into_remote_version())
             .ok_or_else(|| NetworkError::RemoteVersionNotFound(major.to_string()))
+    }
+
+    /// Derive the `/info/available_releases` URL from the configured base URL.
+    ///
+    /// The base URL ends with `/v3/assets/feature_releases`; stripping that
+    /// suffix yields the API root (`…/v3`) to which `/info/available_releases`
+    /// is appended.
+    fn adoptium_info_url(&self) -> String {
+        let base = self.adoptium_base_url();
+        let root = base
+            .strip_suffix("/assets/feature_releases")
+            .unwrap_or(base);
+        format!("{root}/info/available_releases")
+    }
+
+    async fn fetch_available_releases(&self) -> Result<AvailableReleases, NetworkError> {
+        let url = self.adoptium_info_url();
+        Ok(self
+            .client
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<AvailableReleases>()
+            .await?)
     }
 }
 
@@ -136,6 +179,12 @@ struct AdoptiumVersionData {
     semver: String,
 }
 
+/// Response from the `/info/available_releases` endpoint.
+#[derive(Debug, Deserialize)]
+struct AvailableReleases {
+    available_releases: Vec<u32>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +223,30 @@ mod tests {
         let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
 
         assert_eq!(fetcher.adoptium_base_url(), DEFAULT_ADOPTIUM_BASE_URL);
+    }
+
+    #[test]
+    fn derives_info_url_from_default_base() {
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
+
+        assert_eq!(
+            fetcher.adoptium_info_url(),
+            "https://api.adoptium.net/v3/info/available_releases"
+        );
+    }
+
+    #[test]
+    fn derives_info_url_from_overridden_base() {
+        let sources = SourcesConfig {
+            adoptopenjdk: Some(
+                "https://my-mirror.example.com/v3/assets/feature_releases".to_owned(),
+            ),
+        };
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), sources);
+
+        assert_eq!(
+            fetcher.adoptium_info_url(),
+            "https://my-mirror.example.com/v3/info/available_releases"
+        );
     }
 }
