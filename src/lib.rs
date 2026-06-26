@@ -39,6 +39,8 @@ pub enum Command {
     Current,
     /// Remove an installed Java version.
     Remove(commands::remove::RemoveArgs),
+    /// Manage download cache.
+    Cache(commands::cache::CacheArgs),
     /// Manage version aliases.
     Alias(commands::alias::AliasArgs),
     /// Manage configuration.

@@ -6,6 +6,13 @@ use crate::error::jswitch_error::IoError;
 
 use super::operations;
 
+/// A cached archive file with its name and size in bytes.
+#[derive(Debug, Clone)]
+pub struct CachedArchive {
+    pub name: String,
+    pub size: u64,
+}
+
 /// Manages the download cache directory under `~/.jswitch/cache/`.
 #[derive(Debug, Clone)]
 pub struct CacheManager {
@@ -53,6 +60,45 @@ impl CacheManager {
     /// Check whether a cached archive with the given name exists.
     pub fn has(&self, name: &str) -> bool {
         operations::file_exists(&self.archive_path(name))
+    }
+
+    /// List all cached archive files with their sizes.
+    ///
+    /// Returns an empty vector if the cache directory does not exist.
+    pub fn list_archives(&self) -> Result<Vec<CachedArchive>, IoError> {
+        if !self.cache_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let entries =
+            operations::read_dir_entries(&self.cache_dir).map_err(|source| IoError::Access {
+                path: self.cache_dir.clone(),
+                source,
+            })?;
+        let mut archives = Vec::new();
+        for entry in entries {
+            if entry.is_file() {
+                let name = entry
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_owned())
+                    .unwrap_or_default();
+                let size = std::fs::metadata(&entry)
+                    .map_err(|source| IoError::Access {
+                        path: entry,
+                        source,
+                    })?
+                    .len();
+                archives.push(CachedArchive { name, size });
+            }
+        }
+        archives.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(archives)
+    }
+
+    /// Remove a single cached archive by name.
+    pub fn remove_archive(&self, name: &str) -> Result<(), IoError> {
+        let path = self.archive_path(name);
+        operations::remove_file(&path).map_err(|source| IoError::Access { path, source })
     }
 
     /// Remove all cached archives.

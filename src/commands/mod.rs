@@ -1,4 +1,5 @@
 pub mod alias;
+pub mod cache;
 pub mod completion;
 pub mod config;
 pub mod current;
@@ -12,6 +13,7 @@ pub mod self_update;
 pub mod switch;
 
 pub use alias::{AliasAction, AliasArgs};
+pub use cache::{CacheAction, CacheArgs};
 pub use completion::CompletionArgs;
 pub use config::{ConfigAction, ConfigArgs};
 pub use dispatch::dispatch;

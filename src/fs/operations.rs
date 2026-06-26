@@ -17,6 +17,12 @@ pub fn remove_dir(path: &Path) -> io::Result<()> {
     fs::remove_dir_all(path)
 }
 
+/// Remove a single file.
+pub fn remove_file(path: &Path) -> io::Result<()> {
+    debug!(path = %path.display(), "removing file");
+    fs::remove_file(path)
+}
+
 /// Rename or move a file or directory to a new path.
 pub fn rename(from: &Path, to: &Path) -> io::Result<()> {
     debug!(from = %from.display(), to = %to.display(), "renaming");
