@@ -145,14 +145,18 @@ fn architecture() -> &'static str {
 
 #[derive(Debug, Deserialize)]
 struct AdoptiumAsset {
-    // Some API entries (e.g. source-only releases) omit the `binary` field.
-    binary: Option<AdoptiumBinary>,
+    // The API returns a `binaries` array; some entries (e.g. source-only
+    // releases) may have an empty array or binaries without packages.
+    binaries: Vec<AdoptiumBinary>,
     version_data: AdoptiumVersionData,
 }
 
 impl AdoptiumAsset {
     fn into_remote_version(self) -> Option<RemoteVersion> {
-        let package = self.binary?.package;
+        let package = self
+            .binaries
+            .into_iter()
+            .find_map(|binary| binary.package)?;
         Some(RemoteVersion {
             version: self.version_data.semver,
             archive_name: package.name?,
@@ -164,7 +168,8 @@ impl AdoptiumAsset {
 
 #[derive(Debug, Deserialize)]
 struct AdoptiumBinary {
-    package: AdoptiumPackage,
+    // Some binaries have only an `installer` and no `package` (e.g. .pkg on macOS).
+    package: Option<AdoptiumPackage>,
 }
 
 #[derive(Debug, Deserialize)]
