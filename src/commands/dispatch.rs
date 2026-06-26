@@ -13,5 +13,6 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         Command::Config(args) => crate::commands::config::run(args).await,
         Command::Completion(args) => crate::commands::completion::run(args).await,
         Command::Doctor => crate::commands::doctor::run().await,
+        Command::Env(args) => crate::commands::env_cmd::run(args).await,
     }
 }

@@ -49,4 +49,6 @@ pub enum Command {
     Completion(commands::completion::CompletionArgs),
     /// Run health checks.
     Doctor,
+    /// Print environment variables for the current Java version.
+    Env(commands::env_cmd::EnvArgs),
 }
