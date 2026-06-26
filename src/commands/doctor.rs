@@ -103,14 +103,11 @@ fn check_current_version(manager: &VersionManager) -> Result<DoctorCheck> {
     match resolver.current()? {
         Some(current) if manager.is_installed(&current.version) => Ok(DoctorCheck::ok(
             "current-version",
-            format!("{} is active ({})", current.version, current.source),
+            format!("{} is active", current.version),
         )),
         Some(current) => Ok(DoctorCheck::warn(
             "current-version",
-            format!(
-                "{} is selected ({}) but not installed",
-                current.version, current.source
-            ),
+            format!("{} is selected but not installed", current.version),
         )),
         None => Ok(DoctorCheck::warn(
             "current-version",

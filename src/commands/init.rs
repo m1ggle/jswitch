@@ -82,38 +82,23 @@ fn generate_fish_script() -> String {
 # >>> jswitch init >>>
 # JSwitch shell integration for fish
 
-# Add jswitch bin to PATH (if not already installed system-wide)
-# Note: if jswitch is installed via cargo install or brew, this may not be needed
-
-# Function wrapper for session-level version switching
 function jswitch
-    set cmd $argv[1]
+    set -l cmd $argv[1]
     set -e argv[1]
     command jswitch $cmd $argv
-
-    # Capture and eval export output from switch --session
-    if test "$cmd" = "switch" && string match -q '*--session*' $argv
-        # Re-run to capture env output
-        set -l env_output (command jswitch $cmd $argv 2>/dev/null)
-        for line in $env_output
-            eval $line
-        end
+    set -l exit_code $status
+    if test "$cmd" = "switch"
+        command jswitch env 2>/dev/null | source
     end
+    return $exit_code
 end
 
-# Auto-detect .java-version on directory change (fish 3.0+)
-if functions -q __jswitch_cd_hook
-    # Already registered
-else
-    function __jswitch_cd_hook --on-variable PWD
-        if test -f .java-version
-            set -l env_output (command jswitch env 2>/dev/null)
-            for line in $env_output
-                eval $line
-            end
-        end
-    end
+function __jswitch_apply_env --on-variable PWD
+    command jswitch env 2>/dev/null | source
 end
+
+# Apply on startup
+command jswitch env 2>/dev/null | source
 
 # <<< jswitch init <<<
 "#
@@ -128,16 +113,13 @@ fn generate_powershell_script() -> String {
 # >>> jswitch init >>>
 # JSwitch shell integration for PowerShell
 
-# Function wrapper for session-level version switching
-function global:jswitch {
+function jswitch {
     $cmd = $args[0]
     $rest = $args[1..($args.Length - 1)]
-
-    & jswitch @args
-
-    # Capture and invoke export output from switch --session
-    if ($cmd -eq 'switch' -and $rest -contains '--session') {
-        $envOutput = & jswitch @args 2>$null
+    & jswitch.exe @args
+    $status = $LASTEXITCODE
+    if ($cmd -eq 'switch') {
+        $envOutput = & jswitch.exe env 2>$null
         foreach ($line in $envOutput) {
             if ($line -match '^export (\w+)=(.*)$') {
                 $name = $Matches[1]
@@ -146,7 +128,22 @@ function global:jswitch {
             }
         }
     }
+    return $status
 }
+
+function __jswitch_apply_env {
+    $envOutput = & jswitch.exe env 2>$null
+    foreach ($line in $envOutput) {
+        if ($line -match '^export (\w+)=(.*)$') {
+            $name = $Matches[1]
+            $value = $Matches[2] -replace '"', ''
+            Set-Item -Path "Env:$name" -Value $value
+        }
+    }
+}
+
+# Apply on startup
+__jswitch_apply_env
 
 # <<< jswitch init <<<
 "#

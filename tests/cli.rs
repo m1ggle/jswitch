@@ -18,15 +18,12 @@ fn parses_install_arguments() {
 }
 
 #[test]
-fn parses_switch_scope_flags() {
-    let cli = Cli::parse_from(["jswitch", "switch", "21", "--global"]);
+fn parses_switch_command() {
+    let cli = Cli::parse_from(["jswitch", "switch", "21"]);
 
     match cli.command {
         Command::Switch(args) => {
             assert_eq!(args.version.as_deref(), Some("21"));
-            assert!(args.global);
-            assert!(!args.local);
-            assert!(!args.session);
         }
         command => panic!("expected switch command, got {command:?}"),
     }

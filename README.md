@@ -11,7 +11,7 @@
 
 - 🚀 **极速启动**：Rust 编译的二进制文件，启动速度超快
 - 🔒 **内存安全**：Rust 的所有权系统确保无内存错误
-- 🎯 **精准控制**：全局、项目、会话三级版本管理
+- 🎯 **精准控制**：全局版本管理，自动配置 JAVA_HOME 和 PATH 环境变量
 - 📦 **自动安装**：通过 Adoptium API 自动下载和安装 Eclipse Temurin (AdoptOpenJDK) 版本
 - 🔄 **智能切换**：自动更新 `JAVA_HOME` 和 `PATH` 环境变量
 - 🛡️ **安全可靠**：下载校验、版本验证、回滚机制
@@ -92,15 +92,8 @@ jswitch install 21.0.1
 # 查看已安装的版本
 jswitch list --installed
 
-# 切换到全局默认版本
-jswitch switch 17 --global
-
-# 仅为当前项目设置版本（创建 .java-version 文件）
-cd my-project
-jswitch switch 11 --local
-
-# 在当前会话中临时切换
-jswitch switch 21 --session
+# 设置全局默认版本
+jswitch switch 17
 
 # 使用别名
 jswitch switch lts     # 切换到最新的 LTS 版本
@@ -197,21 +190,18 @@ jswitch alias list
 jswitch alias remove myproject
 ```
 
-### 多项目管理
+### 配置管理
 
 ```bash
-# 项目 A 使用 Java 11
-cd project-a
-jswitch switch 11 --local
-# 这会创建 .java-version 文件
+# 设置全局默认版本
+jswitch switch 17
 
-# 项目 B 使用 Java 17
-cd ../project-b
-jswitch switch 17 --local
+# 切换到其他版本
+jswitch switch 11
+jswitch switch 21
 
-# 回到项目 A，自动切换到 Java 11
-cd ../project-a
-jswitch current  # 显示 11
+# 查看当前使用的版本
+jswitch current
 ```
 
 ### 高级功能
@@ -238,7 +228,6 @@ jswitch self-update
 ### 配置文件位置
 
 - **全局配置**: `~/.jswitch/config.toml`
-- **项目配置**: `./.java-version` 或 `./.jswitch.toml`
 - **Shell 配置**: 自动添加到 `~/.bashrc`、`~/.zshrc` 等
 
 ### 配置示例
@@ -299,7 +288,6 @@ jswitch/
 │   │   ├── mod.rs
 │   │   ├── manager.rs      # 配置管理器
 │   │   ├── global.rs       # 全局配置
-│   │   ├── local.rs        # 本地配置
 │   │   └── validator.rs    # 配置验证
 │   ├── version/            # 版本管理核心
 │   │   ├── mod.rs
@@ -593,8 +581,7 @@ chore: 构建过程或辅助工具
 
 ### v0.1.0 (MVP)
 - [x] 基本版本切换功能
-- [x] 本地版本管理
-- [x] 全局/本地/会话三级作用域
+- [x] 全局版本管理
 - [x] 基础 CLI 界面
 
 ### v0.2.0

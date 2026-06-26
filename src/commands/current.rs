@@ -5,7 +5,7 @@ pub async fn run() -> Result<()> {
     let resolver = VersionResolver::new(config);
 
     match resolver.current()? {
-        Some(current) => println!("{} ({})", current.version, current.source),
+        Some(current) => println!("{}", current.version),
         None => println!("no Java version selected"),
     }
 

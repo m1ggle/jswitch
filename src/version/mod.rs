@@ -6,4 +6,4 @@ pub mod resolver;
 pub use java_version::JavaVersion;
 pub use manager::VersionManager;
 pub use metadata::VersionMetadata;
-pub use resolver::{CurrentVersion, VersionResolver, VersionSource};
+pub use resolver::{CurrentVersion, VersionResolver};

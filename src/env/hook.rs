@@ -3,8 +3,9 @@ use super::Shell;
 /// Generate the full shell integration script for `jswitch init <shell>`.
 ///
 /// The script:
-/// 1. Defines a `jswitch` wrapper function that auto-evals session exports.
-/// 2. Installs a `cd` hook that auto-switches when a `.java-version` file is found.
+/// 1. Defines a `jswitch` wrapper function that re-applies env after `switch`.
+/// 2. Installs a hook that re-applies the global Java version on directory change.
+/// 3. Applies the global version on shell startup.
 pub fn init_script(shell: Shell) -> String {
     match shell {
         Shell::Bash => bash_script(),
@@ -17,33 +18,26 @@ pub fn init_script(shell: Shell) -> String {
 fn bash_script() -> String {
     r#"# jswitch shell integration for bash
 jswitch() {
-    local output
-    output=$(command jswitch "$@")
-    local status=$?
-    if [[ "$output" == "export "* ]]; then
-        eval "$output"
-    else
-        printf '%s\n' "$output"
+    local cmd="${1:-}"; shift || true
+    command jswitch "$cmd" "$@"
+    local exit_code=$?
+    if [[ "$cmd" == "switch" ]]; then
+        eval "$(command jswitch env 2>/dev/null)"
     fi
-    return $status
+    return $exit_code
 }
 
-__jswitch_auto_switch() {
-    if [[ -f ".java-version" ]]; then
-        eval "$(command jswitch switch "$(cat .java-version)" --session 2>/dev/null)"
-    fi
+__jswitch_apply_env() {
+    eval "$(command jswitch env 2>/dev/null)"
 }
 
-__jswitch_prev_dir="$PWD"
-__jswitch_cd() {
-    builtin cd "$@" || return $?
-    if [[ "$PWD" != "$__jswitch_prev_dir" ]]; then
-        __jswitch_auto_switch
-    fi
-    __jswitch_prev_dir="$PWD"
-}
+if [[ -n "${PROMPT_COMMAND:-}" ]]; then
+    export PROMPT_COMMAND="__jswitch_apply_env;${PROMPT_COMMAND}"
+else
+    export PROMPT_COMMAND="__jswitch_apply_env"
+fi
 
-alias cd='__jswitch_cd'
+__jswitch_apply_env
 "#
     .to_owned()
 }
@@ -51,24 +45,23 @@ alias cd='__jswitch_cd'
 fn zsh_script() -> String {
     r#"# jswitch shell integration for zsh
 jswitch() {
-    local output
-    output=$(command jswitch "$@")
-    local status=$?
-    if [[ "$output" == "export "* ]]; then
-        eval "$output"
-    else
-        printf '%s\n' "$output"
+    local cmd="${1:-}"; shift || true
+    command jswitch "$cmd" "$@"
+    local exit_code=$?
+    if [[ "$cmd" == "switch" ]]; then
+        eval "$(command jswitch env 2>/dev/null)"
     fi
-    return $status
+    return $exit_code
 }
 
-__jswitch_auto_switch() {
-    if [[ -f ".java-version" ]]; then
-        eval "$(command jswitch switch "$(cat .java-version)" --session 2>/dev/null)"
-    fi
+__jswitch_apply_env() {
+    eval "$(command jswitch env 2>/dev/null)"
 }
 
-chpwd_functions+=(__jswitch_auto_switch)
+autoload -Uz add-zsh-hook 2>/dev/null
+add-zsh-hook chpwd __jswitch_apply_env 2>/dev/null || true
+
+__jswitch_apply_env
 "#
     .to_owned()
 }
@@ -76,19 +69,22 @@ chpwd_functions+=(__jswitch_auto_switch)
 fn fish_script() -> String {
     r#"# jswitch shell integration for fish
 function jswitch
-    set -l output (command jswitch $argv)
-    if string match -q "set -gx *" -- $output
-        eval $output
-    else
-        printf '%s\n' $output
+    set -l cmd $argv[1]
+    set -e argv[1]
+    command jswitch $cmd $argv
+    set -l exit_code $status
+    if test "$cmd" = "switch"
+        command jswitch env 2>/dev/null | source
     end
+    return $exit_code
 end
 
-function __jswitch_auto_switch --on-variable PWD
-    if test -f ".java-version"
-        command jswitch switch (cat .java-version) --session 2>/dev/null | source
-    end
+function __jswitch_apply_env --on-variable PWD
+    command jswitch env 2>/dev/null | source
 end
+
+# Apply on startup
+command jswitch env 2>/dev/null | source
 "#
     .to_owned()
 }
@@ -96,25 +92,36 @@ end
 fn powershell_script() -> String {
     r#"# jswitch shell integration for PowerShell
 function jswitch {
-    $output = & jswitch.exe $args
+    $cmd = $args[0]
+    $rest = $args[1..($args.Length - 1)]
+    & jswitch.exe @args
     $status = $LASTEXITCODE
-    if ($output -match '^\$env:') {
-        Invoke-Expression ($output -join "`n")
-    } else {
-        $output
+    if ($cmd -eq 'switch') {
+        $envOutput = & jswitch.exe env 2>$null
+        foreach ($line in $envOutput) {
+            if ($line -match '^export (\w+)=(.*)$') {
+                $name = $Matches[1]
+                $value = $Matches[2] -replace '"', ''
+                Set-Item -Path "Env:$name" -Value $value
+            }
+        }
     }
     return $status
 }
 
-function Prompt {
-    if (Test-Path ".java-version") {
-        $version = Get-Content ".java-version" -ErrorAction SilentlyContinue
-        if ($version) {
-            & jswitch.exe switch $version --session 2>$null | Out-Null
+function __jswitch_apply_env {
+    $envOutput = & jswitch.exe env 2>$null
+    foreach ($line in $envOutput) {
+        if ($line -match '^export (\w+)=(.*)$') {
+            $name = $Matches[1]
+            $value = $Matches[2] -replace '"', ''
+            Set-Item -Path "Env:$name" -Value $value
         }
     }
-    "PS > "
 }
+
+# Apply on startup
+__jswitch_apply_env
 "#
     .to_owned()
 }
@@ -127,21 +134,21 @@ mod tests {
     fn bash_script_has_jswitch_function() {
         let script = init_script(Shell::Bash);
         assert!(script.contains("jswitch()"));
-        assert!(script.contains("__jswitch_auto_switch"));
+        assert!(script.contains("__jswitch_apply_env"));
     }
 
     #[test]
     fn zsh_script_uses_chpwd_hook() {
         let script = init_script(Shell::Zsh);
         assert!(script.contains("jswitch()"));
-        assert!(script.contains("chpwd_functions"));
+        assert!(script.contains("add-zsh-hook chpwd"));
     }
 
     #[test]
     fn fish_script_has_jswitch_function() {
         let script = init_script(Shell::Fish);
         assert!(script.contains("function jswitch"));
-        assert!(script.contains("__jswitch_auto_switch"));
+        assert!(script.contains("__jswitch_apply_env"));
     }
 
     #[test]
