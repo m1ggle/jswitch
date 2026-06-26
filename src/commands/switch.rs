@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Result,
     config::Config,
+    env::{JavaEnvironment, Shell},
     error::jswitch_error::VersionError,
     version::{JavaVersion, VersionManager, VersionResolver},
 };
@@ -40,7 +41,12 @@ pub async fn run(args: SwitchArgs) -> Result<()> {
         write_local_version(&resolved)?;
         println!("set local Java version to {}", resolved);
     } else if args.session {
-        println!("export JSWITCH_SESSION_VERSION={}", resolved);
+        // Output export statements for the shell wrapper to eval.
+        let env = JavaEnvironment::for_version_id(&resolved)?
+            .ok_or_else(|| VersionError::NotFound(resolved.clone()))?;
+        for statement in env.export_for_shell(Shell::Bash) {
+            println!("{statement}");
+        }
     } else {
         config.global.default_version = Some(resolved.clone());
         config.save()?;

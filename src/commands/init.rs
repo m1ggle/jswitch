@@ -1,7 +1,10 @@
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
-use crate::Result;
+use crate::{
+    Result,
+    env::{Shell, hook::init_script},
+};
 
 #[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct InitArgs {
@@ -9,16 +12,15 @@ pub struct InitArgs {
     pub shell: Option<Shell>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, clap::ValueEnum, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Shell {
-    Bash,
-    Zsh,
-    Fish,
-    PowerShell,
-}
-
 pub async fn run(args: InitArgs) -> Result<()> {
-    println!("initialize shell integration: {:?}", args.shell);
+    match args.shell {
+        Some(shell) => {
+            print!("{}", init_script(shell));
+        }
+        None => {
+            eprintln!("usage: jswitch init <shell>");
+            eprintln!("supported shells: bash, zsh, fish, powershell");
+        }
+    }
     Ok(())
 }
