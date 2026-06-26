@@ -34,18 +34,6 @@ pub struct SourcesConfig {
     /// Adoptium API base URL (e.g. `https://api.adoptium.net/v3/assets/feature_releases`).
     #[serde(default)]
     pub adoptopenjdk: Option<String>,
-    /// Corretto download base URL (e.g. `https://corretto.aws/downloads/latest`).
-    #[serde(default)]
-    pub corretto: Option<String>,
-    /// Corretto checksum base URL (e.g. `https://corretto.aws/downloads/latest_sha256`).
-    #[serde(default)]
-    pub corretto_checksum: Option<String>,
-    /// Oracle download base URL (e.g. `https://download.oracle.com/java`).
-    #[serde(default)]
-    pub oracle: Option<String>,
-    /// OpenJDK download base URL (e.g. `https://download.java.net/java/GA`).
-    #[serde(default)]
-    pub openjdk: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

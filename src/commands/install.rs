@@ -13,32 +13,8 @@ use crate::{
 pub struct InstallArgs {
     pub version: Option<String>,
 
-    #[arg(long, value_enum)]
-    pub source: Option<JavaSource>,
-
     #[arg(long)]
     pub use_now: bool,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, clap::ValueEnum, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum JavaSource {
-    OpenJdk,
-    Oracle,
-    Corretto,
-    Adoptopenjdk,
-}
-
-impl JavaSource {
-    /// Directory name used under `~/.jswitch/versions/` for this source.
-    pub fn dir_name(&self) -> &'static str {
-        match self {
-            JavaSource::OpenJdk => "openjdk",
-            JavaSource::Oracle => "oracle",
-            JavaSource::Corretto => "corretto",
-            JavaSource::Adoptopenjdk => "adoptopenjdk",
-        }
-    }
 }
 
 pub async fn run(args: InstallArgs) -> Result<()> {
@@ -49,25 +25,20 @@ pub async fn run(args: InstallArgs) -> Result<()> {
         .ok_or_else(|| VersionError::Invalid("missing version".to_owned()))?;
     let config = Config::load_or_default()?;
     let resolved = VersionResolver::new(config.clone()).resolve(&requested.value);
-    let source = args.source.unwrap_or(JavaSource::Adoptopenjdk);
     let client = reqwest::Client::new();
     let fetcher = VersionFetcher::new(client.clone(), config.sources.clone());
-    let remote = fetcher.fetch(&resolved, source).await?;
+    let remote = fetcher.fetch(&resolved).await?;
     let manager = VersionManager::from_default_root()?;
 
-    println!(
-        "installing Java {} from {:?}",
-        remote.version, remote.source
-    );
+    println!("installing Java {}", remote.version);
     JavaInstaller::new(client, manager).install(&remote).await?;
-    let installed_id = format!("{}/{}", remote.source.dir_name(), remote.version);
-    println!("installed Java {}", installed_id);
+    println!("installed Java {}", remote.version);
 
     if args.use_now {
         let mut config = config;
-        config.global.default_version = Some(installed_id.clone());
+        config.global.default_version = Some(remote.version.clone());
         config.save()?;
-        println!("set global Java version to {}", installed_id);
+        println!("set global Java version to {}", remote.version);
     }
 
     Ok(())

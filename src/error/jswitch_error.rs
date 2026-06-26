@@ -129,11 +129,6 @@ pub enum VersionError {
     NotFound(String),
     #[error("invalid Java version: {0}")]
     Invalid(String),
-    #[error("multiple Java versions match '{version}': {matches:?}; specify --source")]
-    AmbiguousVersion {
-        version: String,
-        matches: Vec<String>,
-    },
     #[error("cannot remove active Java version {version}; use --force to override")]
     ActiveVersion { version: String },
     #[error("failed to read versions directory {path}: {source}")]

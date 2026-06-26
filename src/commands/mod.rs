@@ -16,7 +16,7 @@ pub use completion::CompletionArgs;
 pub use config::{ConfigAction, ConfigArgs};
 pub use dispatch::dispatch;
 pub use init::{InitArgs, Shell};
-pub use install::{InstallArgs, JavaSource};
+pub use install::InstallArgs;
 pub use list::ListArgs;
 pub use remove::RemoveArgs;
 pub use self_update::SelfUpdateArgs;

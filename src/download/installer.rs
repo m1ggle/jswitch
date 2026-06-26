@@ -27,22 +27,12 @@ impl JavaInstaller {
     }
 
     pub async fn install(&self, remote: &RemoteVersion) -> Result<(), NetworkError> {
-        let source_dir = remote.source.dir_name();
         let cache_dir = self.manager.root_dir().join("cache");
-        let temp_dir = self
-            .manager
-            .root_dir()
-            .join("tmp")
-            .join(source_dir)
-            .join(&remote.version);
+        let temp_dir = self.manager.root_dir().join("tmp").join(&remote.version);
         let archive_path = cache_dir.join(&remote.archive_name);
-        let install_dir = self
-            .manager
-            .versions_dir()
-            .join(source_dir)
-            .join(&remote.version);
+        let install_dir = self.manager.versions_dir().join(&remote.version);
 
-        debug!(version = %remote.version, source = ?remote.source, "starting install");
+        debug!(version = %remote.version, "starting install");
         fs::create_dir_all(&cache_dir).map_err(|source| NetworkError::CreateDir {
             path: cache_dir.clone(),
             source,
@@ -239,7 +229,7 @@ fn flatten_single_root(destination: &Path) -> Result<(), NetworkError> {
 fn write_metadata(destination: &Path, remote: &RemoteVersion) -> Result<(), NetworkError> {
     let metadata = VersionMetadata {
         version: remote.version.clone(),
-        source: Some(format!("{:?}", remote.source).to_ascii_lowercase()),
+        source: Some("adoptopenjdk".to_owned()),
     };
     let content = toml::to_string_pretty(&metadata).map_err(NetworkError::SerializeMetadata)?;
     let path = destination.join(".jswitch-version.toml");

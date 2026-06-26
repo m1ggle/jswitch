@@ -1,20 +1,12 @@
 use serde::Deserialize;
 
-use crate::{
-    commands::install::JavaSource, config::global::SourcesConfig,
-    error::jswitch_error::NetworkError,
-};
+use crate::{config::global::SourcesConfig, error::jswitch_error::NetworkError};
 
 const DEFAULT_ADOPTIUM_BASE_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases";
-const DEFAULT_CORRETTO_BASE_URL: &str = "https://corretto.aws/downloads/latest";
-const DEFAULT_CORRETTO_CHECKSUM_BASE_URL: &str = "https://corretto.aws/downloads/latest_sha256";
-const DEFAULT_ORACLE_BASE_URL: &str = "https://download.oracle.com/java";
-const DEFAULT_OPENJDK_PAGE_URL: &str = "https://jdk.java.net";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteVersion {
     pub version: String,
-    pub source: JavaSource,
     pub archive_name: String,
     pub download_url: String,
     pub checksum_url: Option<String>,
@@ -39,126 +31,18 @@ impl VersionFetcher {
             .unwrap_or(DEFAULT_ADOPTIUM_BASE_URL)
     }
 
-    fn corretto_base_url(&self) -> &str {
-        self.sources
-            .corretto
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_CORRETTO_BASE_URL)
-    }
-
-    fn corretto_checksum_base_url(&self) -> &str {
-        self.sources
-            .corretto_checksum
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_CORRETTO_CHECKSUM_BASE_URL)
-    }
-
-    fn oracle_base_url(&self) -> &str {
-        self.sources
-            .oracle
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_ORACLE_BASE_URL)
-    }
-
-    fn openjdk_page_url(&self) -> &str {
-        self.sources
-            .openjdk
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_OPENJDK_PAGE_URL)
-    }
-
-    pub async fn fetch(
-        &self,
-        requested: &str,
-        source: JavaSource,
-    ) -> Result<RemoteVersion, NetworkError> {
+    pub async fn fetch(&self, requested: &str) -> Result<RemoteVersion, NetworkError> {
         let major = resolve_feature_version(requested)?;
-
-        match source {
-            JavaSource::Corretto => Ok(self.corretto_remote_version(major)),
-            JavaSource::Oracle => Ok(self.oracle_remote_version(major)),
-            JavaSource::OpenJdk => self.openjdk_remote_version(major).await,
-            JavaSource::Adoptopenjdk => self.fetch_adoptium(major, source).await,
-        }
+        self.fetch_adoptium(major).await
     }
 
-    // --- Corretto: direct URL construction (no API call needed) ---
-
-    fn corretto_remote_version(&self, major: u32) -> RemoteVersion {
-        let archive_name = corretto_archive_name(major);
-        let base = self.corretto_base_url();
-        let download_url = format!("{base}/{archive_name}");
-        let checksum_base = self.corretto_checksum_base_url();
-        let checksum_url = Some(format!("{checksum_base}/{archive_name}"));
-
-        RemoteVersion {
-            version: major.to_string(),
-            source: JavaSource::Corretto,
-            archive_name,
-            download_url,
-            checksum_url,
-        }
-    }
-
-    // --- Oracle: direct URL, no checksum endpoint available ---
-
-    fn oracle_remote_version(&self, major: u32) -> RemoteVersion {
-        let archive_name = oracle_archive_name(major);
-        let base = self.oracle_base_url();
-        let download_url = format!("{base}/{major}/latest/{archive_name}");
-
-        RemoteVersion {
-            version: major.to_string(),
-            source: JavaSource::Oracle,
-            archive_name,
-            download_url,
-            // Oracle does not expose a standalone checksum endpoint.
-            checksum_url: None,
-        }
-    }
-
-    // --- OpenJDK (jdk.java.net): HTML scraping for download URLs ---
-    //
-    // download.java.net URLs include version-specific hash/build segments
-    // (e.g. jdk17/0d48.../35/GPL/...) that can't be derived from the major
-    // version alone.  We fetch the jdk.java.net page and extract the real
-    // download URL from the HTML.
-
-    async fn openjdk_remote_version(&self, major: u32) -> Result<RemoteVersion, NetworkError> {
-        let base = self.openjdk_page_url();
-
-        // Try the version-specific page first (for current GA releases),
-        // then fall back to the archive page (for superseded versions).
-        for page_url in [format!("{base}/{major}/"), format!("{base}/archive/")] {
-            if let Ok(response) = self.client.get(&page_url).send().await
-                && let Ok(html) = response.text().await
-                && let Some(remote) = extract_openjdk_download(&html, major)
-            {
-                return Ok(remote);
-            }
-        }
-
-        Err(NetworkError::RemoteVersionNotFound(major.to_string()))
-    }
-
-    // --- Adoptium (Eclipse Temurin): API-based discovery ---
-
-    async fn fetch_adoptium(
-        &self,
-        major: u32,
-        source: JavaSource,
-    ) -> Result<RemoteVersion, NetworkError> {
+    async fn fetch_adoptium(&self, major: u32) -> Result<RemoteVersion, NetworkError> {
         let image_type = "jdk";
         let base = self.adoptium_base_url();
         let url = format!(
-            "{base}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor={}",
+            "{base}/{major}/ga?architecture={}&heap_size=normal&image_type={image_type}&jvm_impl=hotspot&os={}&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor=eclipse",
             architecture(),
             operating_system(),
-            vendor(source),
         );
 
         let assets = self
@@ -172,7 +56,7 @@ impl VersionFetcher {
 
         assets
             .into_iter()
-            .find_map(|asset| asset.into_remote_version(source))
+            .find_map(|asset| asset.into_remote_version())
             .ok_or_else(|| NetworkError::RemoteVersionNotFound(major.to_string()))
     }
 }
@@ -197,92 +81,7 @@ fn resolve_feature_version(requested: &str) -> Result<u32, NetworkError> {
     }
 }
 
-// --- Archive name builders ---
-
-fn corretto_archive_name(major: u32) -> String {
-    let extension = if std::env::consts::OS == "windows" {
-        "zip"
-    } else {
-        "tar.gz"
-    };
-    format!(
-        "amazon-corretto-{major}-{}-{}-jdk.{extension}",
-        architecture(),
-        corretto_operating_system(),
-    )
-}
-
-fn oracle_archive_name(major: u32) -> String {
-    let extension = if std::env::consts::OS == "windows" {
-        "zip"
-    } else {
-        "tar.gz"
-    };
-    format!(
-        "jdk-{major}_{}-{}_bin.{extension}",
-        operating_system_for_archive(),
-        architecture(),
-    )
-}
-
-fn openjdk_archive_name(major: u32) -> String {
-    let extension = if std::env::consts::OS == "windows" {
-        "zip"
-    } else {
-        "tar.gz"
-    };
-    format!(
-        "openjdk-{major}_{}-{}_bin.{extension}",
-        operating_system_for_archive(),
-        architecture(),
-    )
-}
-
-/// Extract the OpenJDK download URL from jdk.java.net HTML.
-///
-/// The page lists download links in `href` attributes like:
-///   `https://download.java.net/java/GA/jdk21/.../GPL/openjdk-21_macos-aarch64_bin.tar.gz`
-///
-/// We scan all `href="..."` values for one ending with the platform-specific
-/// archive name (excluding the `.sha256` variant) and derive both the download
-/// URL and checksum URL from it.
-fn extract_openjdk_download(html: &str, major: u32) -> Option<RemoteVersion> {
-    let archive_name = openjdk_archive_name(major);
-    let checksum_suffix = format!("{archive_name}.sha256");
-
-    let mut search_from = 0;
-    while let Some(rel) = html[search_from..].find("href=\"") {
-        let href_start = search_from + rel + 6;
-        let url_end = html[href_start..].find('"')?;
-        let url = &html[href_start..href_start + url_end];
-
-        if url.ends_with(&archive_name) && !url.ends_with(&checksum_suffix) {
-            let download_url = url.to_owned();
-            let checksum_url = Some(format!("{download_url}.sha256"));
-            return Some(RemoteVersion {
-                version: major.to_string(),
-                source: JavaSource::OpenJdk,
-                archive_name,
-                download_url,
-                checksum_url,
-            });
-        }
-
-        search_from = href_start + url_end + 1;
-    }
-
-    None
-}
-
 // --- Platform helpers ---
-
-fn vendor(source: JavaSource) -> &'static str {
-    match source {
-        JavaSource::OpenJdk | JavaSource::Adoptopenjdk => "eclipse",
-        JavaSource::Corretto => "amazon",
-        JavaSource::Oracle => "oracle",
-    }
-}
 
 fn operating_system() -> &'static str {
     match std::env::consts::OS {
@@ -290,19 +89,6 @@ fn operating_system() -> &'static str {
         "windows" => "windows",
         _ => "linux",
     }
-}
-
-/// OS name as used in archive file names (e.g. `jdk-17_macos-aarch64_bin.tar.gz`).
-fn operating_system_for_archive() -> &'static str {
-    match std::env::consts::OS {
-        "macos" => "macos",
-        "windows" => "windows",
-        _ => "linux",
-    }
-}
-
-fn corretto_operating_system() -> &'static str {
-    operating_system_for_archive()
 }
 
 fn architecture() -> &'static str {
@@ -322,11 +108,10 @@ struct AdoptiumAsset {
 }
 
 impl AdoptiumAsset {
-    fn into_remote_version(self, source: JavaSource) -> Option<RemoteVersion> {
+    fn into_remote_version(self) -> Option<RemoteVersion> {
         let package = self.binary?.package;
         Some(RemoteVersion {
             version: self.version_data.semver,
-            source,
             archive_name: package.name?,
             download_url: package.link?,
             checksum_url: package.checksum_link,
@@ -371,127 +156,23 @@ mod tests {
     }
 
     #[test]
-    fn builds_corretto_remote_version_from_default_urls() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
-        let remote = fetcher.corretto_remote_version(17);
-
-        assert_eq!(remote.version, "17");
-        assert_eq!(remote.source, JavaSource::Corretto);
-        assert!(remote.archive_name.starts_with("amazon-corretto-17-"));
-        assert!(remote.download_url.starts_with(DEFAULT_CORRETTO_BASE_URL));
-        assert_eq!(
-            remote.checksum_url,
-            Some(format!(
-                "{DEFAULT_CORRETTO_CHECKSUM_BASE_URL}/{}",
-                remote.archive_name
-            ))
-        );
-    }
-
-    #[test]
-    fn builds_oracle_remote_version_without_checksum() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
-        let remote = fetcher.oracle_remote_version(17);
-
-        assert_eq!(remote.version, "17");
-        assert_eq!(remote.source, JavaSource::Oracle);
-        assert!(remote.archive_name.starts_with("jdk-17_"));
-        assert!(remote.download_url.starts_with(DEFAULT_ORACLE_BASE_URL));
-        assert!(remote.download_url.contains("/17/latest/"));
-        assert!(remote.checksum_url.is_none());
-    }
-
-    #[test]
-    fn extracts_openjdk_download_url_from_html() {
-        let html = r#"
-        <html><body>
-        <h3>JDK 21</h3>
-        <ul>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-aarch64_bin.tar.gz">macOS aarch64</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-aarch64_bin.tar.gz.sha256">checksum</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-x64_bin.tar.gz">macOS x64</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_macos-x64_bin.tar.gz.sha256">checksum</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_linux-x64_bin.tar.gz">Linux x64</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_linux-aarch64_bin.tar.gz">Linux aarch64</a></li>
-        <li><a href="https://download.java.net/java/GA/jdk21/5557132c/45/GPL/openjdk-21_windows-x64_bin.zip">Windows x64</a></li>
-        </ul>
-        </body></html>
-        "#;
-
-        let remote = extract_openjdk_download(html, 21).expect("should find download URL");
-
-        assert_eq!(remote.version, "21");
-        assert_eq!(remote.source, JavaSource::OpenJdk);
-        assert!(remote.archive_name.starts_with("openjdk-21_"));
-        assert!(
-            remote
-                .download_url
-                .starts_with("https://download.java.net/java/GA/jdk21/")
-        );
-        assert!(!remote.download_url.ends_with(".sha256"));
-        assert!(remote.checksum_url.is_some());
-        assert!(remote.checksum_url.unwrap().ends_with(".sha256"));
-    }
-
-    #[test]
-    fn returns_none_when_openjdk_download_url_not_in_html() {
-        let html = "<html><body>No downloads here</body></html>";
-        assert!(extract_openjdk_download(html, 21).is_none());
-    }
-
-    #[test]
-    fn builds_corretto_eight_url_for_legacy_java_version() {
-        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
-        let major = resolve_feature_version("1.8").unwrap();
-        let remote = fetcher.corretto_remote_version(major);
-
-        assert_eq!(remote.version, "8");
-        assert!(remote.archive_name.starts_with("amazon-corretto-8-"));
-        assert!(remote.download_url.contains("amazon-corretto-8-"));
-    }
-
-    #[test]
-    fn uses_config_overridden_urls() {
+    fn uses_config_overridden_adoptium_url() {
         let sources = SourcesConfig {
-            corretto: Some("https://my-mirror.example.com/corretto".to_owned()),
-            corretto_checksum: Some("https://my-mirror.example.com/corretto-checksums".to_owned()),
-            oracle: Some("https://my-mirror.example.com/oracle".to_owned()),
-            openjdk: Some("https://my-mirror.example.com/openjdk".to_owned()),
             adoptopenjdk: Some("https://my-mirror.example.com/adoptium".to_owned()),
         };
 
         let fetcher = VersionFetcher::new(reqwest::Client::new(), sources);
 
-        let corretto = fetcher.corretto_remote_version(17);
-        assert!(
-            corretto
-                .download_url
-                .starts_with("https://my-mirror.example.com/corretto/")
-        );
-        assert!(
-            corretto
-                .checksum_url
-                .unwrap()
-                .starts_with("https://my-mirror.example.com/corretto-checksums/")
-        );
-
-        let oracle = fetcher.oracle_remote_version(17);
-        assert!(
-            oracle
-                .download_url
-                .starts_with("https://my-mirror.example.com/oracle/17/latest/")
-        );
-
-        // OpenJDK uses HTML scraping, so the override applies to the page URL
-        // (jdk.java.net), not a direct download URL.
-        assert_eq!(
-            fetcher.openjdk_page_url(),
-            "https://my-mirror.example.com/openjdk"
-        );
-
         assert_eq!(
             fetcher.adoptium_base_url(),
             "https://my-mirror.example.com/adoptium"
         );
+    }
+
+    #[test]
+    fn uses_default_adoptium_url() {
+        let fetcher = VersionFetcher::new(reqwest::Client::new(), SourcesConfig::default());
+
+        assert_eq!(fetcher.adoptium_base_url(), DEFAULT_ADOPTIUM_BASE_URL);
     }
 }
