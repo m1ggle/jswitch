@@ -21,9 +21,14 @@ BINARY_NAME="jswitch"
 
 # ─── Targets ───────────────────────────────────────────────────────────────
 
-TARGETS=(
+MACOS_TARGETS=(
     "aarch64-apple-darwin"
     "x86_64-apple-darwin"
+)
+
+LINUX_TARGETS=(
+    "aarch64-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
 )
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
@@ -39,6 +44,43 @@ info() {
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || err "required command not found: $1"
+}
+
+is_macos() {
+    [[ "$(uname -s)" == "Darwin" ]]
+}
+
+# Build a single target. Uses cargo-zigbuild for Linux targets on macOS
+# because the `ring` crate (reqwest rustls) requires a C cross-compiler.
+build_target() {
+    local target="$1"
+
+    rustup target list --installed 2>/dev/null | grep -q "$target" \
+        || rustup target add "$target"
+
+    if [[ "$target" == *linux* ]] && is_macos; then
+        command -v cargo-zigbuild >/dev/null 2>&1 \
+            || err "cargo-zigbuild required for Linux targets.\n\nInstall:\n  cargo install cargo-zigbuild\n  brew install zig"
+
+        info "building $target (via cargo-zigbuild)"
+        cargo zigbuild --release --target "$target"
+    else
+        info "building $target"
+        cargo build --release --target "$target"
+    fi
+}
+
+# Package a single target into a tar.gz
+package_target() {
+    local target="$1"
+    local archive_name="${BINARY_NAME}-${target}.tar.gz"
+
+    info "packaging $archive_name"
+    tar -czf "$dist_dir/$archive_name" \
+        -C "target/$target/release" \
+        "$BINARY_NAME"
+
+    info "built $archive_name"
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────
@@ -74,25 +116,24 @@ main() {
     rm -rf "$dist_dir"
     mkdir -p "$dist_dir"
 
-    # Build and package each target
-    local target archive_name
-    for target in "${TARGETS[@]}"; do
-        info "building $target"
+    # Build and package macOS targets
+    local target
+    for target in "${MACOS_TARGETS[@]}"; do
+        build_target "$target"
+        package_target "$target"
+    done
 
-        # Ensure target is installed
-        rustup target list --installed 2>/dev/null | grep -q "$target" \
-            || rustup target add "$target"
-
-        cargo build --release --target "$target"
-
-        archive_name="${BINARY_NAME}-${target}.tar.gz"
-        info "packaging $archive_name"
-
-        tar -czf "$dist_dir/$archive_name" \
-            -C "target/$target/release" \
-            "$BINARY_NAME"
-
-        info "built $archive_name"
+    # Build and package Linux targets (skip on macOS if zigbuild not available)
+    for target in "${LINUX_TARGETS[@]}"; do
+        if [[ "$target" == *linux* ]] && is_macos; then
+            if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+                info "skipping $target (cargo-zigbuild not installed)"
+                info "  install with: cargo install cargo-zigbuild && brew install zig"
+                continue
+            fi
+        fi
+        build_target "$target"
+        package_target "$target"
     done
 
     # Generate checksums

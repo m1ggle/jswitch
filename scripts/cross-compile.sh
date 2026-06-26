@@ -6,6 +6,10 @@
 # produces distributable archives. Used by release.sh internally, but
 # can also be run standalone for quick cross-target verification.
 #
+# macOS targets build natively with cargo.
+# Linux targets require cargo-zigbuild (install: cargo install cargo-zigbuild
+# and brew install zig) because the `ring` crate needs a C cross-compiler.
+#
 # Usage:
 #   ./scripts/cross-compile.sh                # build all targets
 #   ./scripts/cross-compile.sh --package      # build + create tar.gz archives
@@ -38,7 +42,15 @@ need_cmd() {
     command -v "$1" >/dev/null 2>&1 || err "required command not found: $1"
 }
 
-# ─── Functions ────────────────────────────────────────────────────────────
+# Returns 0 if the target is a Linux target, 1 otherwise.
+is_linux_target() {
+    [[ "$1" == *linux* ]]
+}
+
+# Returns 0 if running on macOS, 1 otherwise.
+is_macos() {
+    [[ "$(uname -s)" == "Darwin" ]]
+}
 
 # Ensure a rustup target is installed
 ensure_target() {
@@ -49,12 +61,42 @@ ensure_target() {
     fi
 }
 
-# Build a single target
+# Ensure cargo-zigbuild is available for Linux cross-compilation.
+# The `ring` crate (via reqwest rustls) requires a C cross-compiler;
+# cargo-zigbuild uses Zig as a drop-in C compiler that supports cross-compilation.
+# Returns 0 if available, 1 otherwise (prints install instructions to stderr).
+ensure_zigbuild() {
+    if command -v cargo-zigbuild >/dev/null 2>&1; then
+        return 0
+    fi
+
+    cat >&2 <<'MSG'
+error: cargo-zigbuild is required for Linux targets (the 'ring' crate needs a C cross-compiler).
+
+Install:
+  cargo install cargo-zigbuild
+  brew install zig
+
+Then re-run this script.
+MSG
+    return 1
+}
+
+# Build a single target. Returns 0 on success, 1 on failure.
 build_target() {
     local target="$1"
     ensure_target "$target"
-    info "building $target"
-    cargo build --release --target "$target"
+
+    if is_linux_target "$target" && is_macos; then
+        if ! ensure_zigbuild; then
+            return 1
+        fi
+        info "building $target (via cargo-zigbuild)"
+        cargo zigbuild --release --target "$target"
+    else
+        info "building $target"
+        cargo build --release --target "$target"
+    fi
 }
 
 # Package a single target into a tar.gz
@@ -98,6 +140,9 @@ main() {
                 for t in "${DEFAULT_TARGETS[@]}"; do
                     echo "  $t"
                 done
+                echo
+                echo "Linux targets require cargo-zigbuild + zig:"
+                echo "  cargo install cargo-zigbuild && brew install zig"
                 exit 0
                 ;;
             *)
