@@ -41,6 +41,19 @@ fn parses_switch_scope_flags() {
 }
 
 #[test]
+fn parses_switch_with_source() {
+    let cli = Cli::parse_from(["jswitch", "switch", "17", "--source", "corretto"]);
+
+    match cli.command {
+        Command::Switch(args) => {
+            assert_eq!(args.version.as_deref(), Some("17"));
+            assert_eq!(args.source, Some(JavaSource::Corretto));
+        }
+        command => panic!("expected switch command, got {command:?}"),
+    }
+}
+
+#[test]
 fn parses_remove_command() {
     let cli = Cli::parse_from(["jswitch", "remove", "11", "--force"]);
 
@@ -48,6 +61,19 @@ fn parses_remove_command() {
         Command::Remove(args) => {
             assert_eq!(args.version, "11");
             assert!(args.force);
+        }
+        command => panic!("expected remove command, got {command:?}"),
+    }
+}
+
+#[test]
+fn parses_remove_with_source() {
+    let cli = Cli::parse_from(["jswitch", "remove", "17", "--source", "corretto"]);
+
+    match cli.command {
+        Command::Remove(args) => {
+            assert_eq!(args.version, "17");
+            assert_eq!(args.source, Some(JavaSource::Corretto));
         }
         command => panic!("expected remove command, got {command:?}"),
     }

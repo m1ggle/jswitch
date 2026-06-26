@@ -29,6 +29,18 @@ pub enum JavaSource {
     Adoptopenjdk,
 }
 
+impl JavaSource {
+    /// Directory name used under `~/.jswitch/versions/` for this source.
+    pub fn dir_name(&self) -> &'static str {
+        match self {
+            JavaSource::OpenJdk => "openjdk",
+            JavaSource::Oracle => "oracle",
+            JavaSource::Corretto => "corretto",
+            JavaSource::Adoptopenjdk => "adoptopenjdk",
+        }
+    }
+}
+
 pub async fn run(args: InstallArgs) -> Result<()> {
     let requested = args
         .version
@@ -48,13 +60,14 @@ pub async fn run(args: InstallArgs) -> Result<()> {
         remote.version, remote.source
     );
     JavaInstaller::new(client, manager).install(&remote).await?;
-    println!("installed Java {}", remote.version);
+    let installed_id = format!("{}/{}", remote.source.dir_name(), remote.version);
+    println!("installed Java {}", installed_id);
 
     if args.use_now {
         let mut config = config;
-        config.global.default_version = Some(remote.version.clone());
+        config.global.default_version = Some(installed_id.clone());
         config.save()?;
-        println!("set global Java version to {}", remote.version);
+        println!("set global Java version to {}", installed_id);
     }
 
     Ok(())
