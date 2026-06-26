@@ -223,13 +223,14 @@ fn architecture() -> &'static str {
 
 #[derive(Debug, Deserialize)]
 struct AdoptiumAsset {
-    binary: AdoptiumBinary,
+    // Some API entries (e.g. source-only releases) omit the `binary` field.
+    binary: Option<AdoptiumBinary>,
     version_data: AdoptiumVersionData,
 }
 
 impl AdoptiumAsset {
     fn into_remote_version(self, source: JavaSource) -> Option<RemoteVersion> {
-        let package = self.binary.package;
+        let package = self.binary?.package;
         Some(RemoteVersion {
             version: self.version_data.semver,
             source,
