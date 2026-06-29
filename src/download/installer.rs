@@ -131,17 +131,16 @@ fn unpack_archive(archive: &Path, destination: &Path) -> Result<(), NetworkError
                 path: archive.to_path_buf(),
                 source,
             })?;
-        flatten_single_root(destination)?;
-        return Ok(());
-    }
-
-    if archive_name.ends_with(".zip") {
+    } else if archive_name.ends_with(".zip") {
         unpack_zip(archive, destination)?;
-        flatten_single_root(destination)?;
-        return Ok(());
+    } else {
+        return Err(NetworkError::UnsupportedArchive(archive_name.to_owned()));
     }
 
-    Err(NetworkError::UnsupportedArchive(archive_name.to_owned()))
+    // Normalize: strip single-root wrapper and macOS bundle nesting
+    flatten_single_root(destination)?;
+    flatten_macos_bundle(destination)?;
+    Ok(())
 }
 
 fn unpack_zip(archive: &Path, destination: &Path) -> Result<(), NetworkError> {
@@ -226,6 +225,36 @@ fn flatten_single_root(destination: &Path) -> Result<(), NetworkError> {
     fs::remove_dir_all(&root).map_err(|source| NetworkError::Remove { path: root, source })
 }
 
+/// On macOS, Adoptium tarballs extract to a JDK bundle structure:
+/// `Contents/Home/{bin,lib,…}`.  This lifts `Contents/Home/*` up to
+/// `destination` so that `bin/` sits directly under the install dir,
+/// matching the flat layout used on Linux/Windows.
+fn flatten_macos_bundle(destination: &Path) -> Result<(), NetworkError> {
+    let contents_home = destination.join("Contents").join("Home");
+    if !contents_home.is_dir() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&contents_home).map_err(|source| NetworkError::ReadFile {
+        path: contents_home.clone(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| NetworkError::ReadFile {
+            path: contents_home.clone(),
+            source,
+        })?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        fs::rename(&from, &to).map_err(|source| NetworkError::Rename { from, to, source })?;
+    }
+
+    // Remove the now-empty Contents/ tree
+    fs::remove_dir_all(destination.join("Contents")).map_err(|source| NetworkError::Remove {
+        path: destination.join("Contents"),
+        source,
+    })
+}
+
 fn write_metadata(destination: &Path, remote: &RemoteVersion) -> Result<(), NetworkError> {
     let metadata = VersionMetadata {
         version: remote.version.clone(),
@@ -252,5 +281,33 @@ mod tests {
         assert!(dir.path().join("bin").exists());
         assert!(dir.path().join("release").exists());
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn flattens_macos_bundle_contents_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("Contents").join("Home");
+        fs::create_dir_all(home.join("bin")).unwrap();
+        fs::create_dir_all(home.join("lib")).unwrap();
+        fs::write(home.join("release"), "JAVA_VERSION=17").unwrap();
+        // macOS bundle extras that should be removed
+        fs::create_dir_all(dir.path().join("Contents").join("MacOS")).unwrap();
+
+        flatten_macos_bundle(dir.path()).unwrap();
+
+        assert!(dir.path().join("bin").exists());
+        assert!(dir.path().join("lib").exists());
+        assert!(dir.path().join("release").exists());
+        assert!(!dir.path().join("Contents").exists());
+    }
+
+    #[test]
+    fn flatten_macos_bundle_noop_when_no_contents_home() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("bin")).unwrap();
+
+        flatten_macos_bundle(dir.path()).unwrap();
+
+        assert!(dir.path().join("bin").exists());
     }
 }
